@@ -177,9 +177,9 @@ app.use('/api', notFoundHandler);
 // Centralized error handling middleware
 app.use(errorHandler);
 
-// Start the server if directly executed
+// Start the server if directly executed (skip app.listen on Vercel serverless)
 let server = null;
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   server = app.listen(PORT, () => {
     logger.info(`Server running on http://localhost:${PORT} in [${process.env.NODE_ENV || 'development'}] mode`);
   });
