@@ -1,0 +1,303 @@
+.register-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background-color: var(--bg-page);
+}
+
+.register-card {
+  width: 100%;
+  max-width: 440px;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-card);
+  padding: var(--space-8);
+}
+
+.register-header {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: var(--space-6);
+}
+
+.register-title {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+.register-subtitle {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.register-alert-error {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  padding: 10px var(--space-3);
+  margin-bottom: var(--space-4);
+  background-color: var(--danger-bg);
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-md);
+  color: var(--danger-text);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.register-alert-icon {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.register-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.register-label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: var(--space-1);
+}
+
+/* Input validation visual states */
+.input-error {
+  border-color: var(--danger) !important;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12) !important;
+}
+
+.input-valid {
+  border-color: #10b981 !important;
+}
+
+/* Feedback message container (prevents layout jumping) */
+.field-feedback-container {
+  min-height: 20px;
+  margin-top: 4px;
+}
+
+.field-feedback-error {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.775rem;
+  font-weight: 500;
+  color: #dc2626;
+  animation: fadeIn 150ms ease-in-out;
+}
+
+.field-feedback-success {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.775rem;
+  font-weight: 500;
+  color: #059669;
+  animation: fadeIn 150ms ease-in-out;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Password input container */
+.password-input-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.password-input {
+  padding-right: 42px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: var(--space-2);
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 6px;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color var(--transition-fast), background-color var(--transition-fast);
+}
+
+.password-toggle-btn:hover {
+  color: var(--text-primary);
+  background-color: var(--bg-subtle);
+}
+
+.password-toggle-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* Password Strength Meter */
+.password-strength-container {
+  margin-top: 8px;
+  padding: 8px 10px;
+  background-color: var(--bg-page);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.password-strength-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  font-size: 0.75rem;
+}
+
+.password-strength-title {
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.password-strength-label {
+  font-weight: 700;
+  text-transform: capitalize;
+}
+
+.password-strength-label.strength-weak {
+  color: #dc2626;
+}
+
+.password-strength-label.strength-fair {
+  color: #d97706;
+}
+
+.password-strength-label.strength-strong {
+  color: #059669;
+}
+
+.password-strength-track {
+  width: 100%;
+  height: 5px;
+  background-color: var(--border-color);
+  border-radius: 9999px;
+  overflow: hidden;
+}
+
+.password-strength-bar {
+  height: 100%;
+  border-radius: 9999px;
+  transition: width 250ms ease, background-color 250ms ease;
+}
+
+.password-strength-bar.strength-weak {
+  background-color: #ef4444;
+}
+
+.password-strength-bar.strength-fair {
+  background-color: #f59e0b;
+}
+
+.password-strength-bar.strength-strong {
+  background-color: #10b981;
+}
+
+/* Live Password Checklist */
+.password-checklist {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background-color: #f8fafc;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+}
+
+.password-checklist-header {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.password-checklist-items {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.75rem;
+  transition: color var(--transition-fast);
+}
+
+.checklist-item.unmet {
+  color: #64748b;
+}
+
+.checklist-item.unmet .checklist-icon-circle {
+  color: #94a3b8;
+  flex-shrink: 0;
+}
+
+.checklist-item.met {
+  color: #065f46;
+  font-weight: 600;
+}
+
+.checklist-item.met .checklist-icon-check {
+  color: #059669;
+  flex-shrink: 0;
+}
+
+/* Submit Button & Footer */
+.register-submit-btn {
+  width: 100%;
+  justify-content: center;
+  padding: 11px;
+  margin-top: var(--space-2);
+}
+
+.register-footer {
+  margin-top: var(--space-6);
+  text-align: center;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.register-link {
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.register-link:hover {
+  text-decoration: underline;
+}
