@@ -1,7 +1,7 @@
 const mysql = require('mysql2/promise');
 const config = require('./config/env');
 
-const pool = mysql.createPool({
+const poolConfig = {
   host: config.db.host,
   port: config.db.port,
   user: config.db.user,
@@ -13,7 +13,13 @@ const pool = mysql.createPool({
   connectTimeout: 10000,
   enableKeepAlive: true,
   keepAliveInitialDelay: 10000,
-});
+};
+
+if (config.db.ssl) {
+  poolConfig.ssl = { minVersion: 'TLSv1.2', rejectUnauthorized: true };
+}
+
+const pool = mysql.createPool(poolConfig);
 
 // Test connection on boot (non-blocking)
 (async () => {

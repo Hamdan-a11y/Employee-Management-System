@@ -41,6 +41,7 @@ function validateEnv() {
       user: process.env.DB_USER || 'root',
       password: process.env.DB_PASSWORD || '',
       database: process.env.DB_NAME || 'employee_db',
+      ssl: process.env.DB_SSL === 'true' || (isProduction && process.env.DB_HOST !== 'localhost' && process.env.DB_HOST !== '127.0.0.1'),
     },
     jwtSecret: process.env.JWT_SECRET,
   };
