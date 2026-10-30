@@ -87,6 +87,20 @@ export default function AuditLog() {
     setPage(1);
   };
 
+  // Format exact tabular timestamp: YYYY-MM-DD HH:mm:ss
+  const formatTimestamp = (dateString) => {
+    if (!dateString) return '';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return dateString;
+    const YYYY = d.getFullYear();
+    const MM = String(d.getMonth() + 1).padStart(2, '0');
+    const DD = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
+  };
+
   // Format relative timestamp
   const formatTimeAgo = (dateString) => {
     const date = new Date(dateString);
@@ -106,33 +120,38 @@ export default function AuditLog() {
       case 'CREATE':
         return (
           <span className="audit-badge audit-badge-create">
-            <PlusCircle size={13} />
+            <span className="audit-badge-dot"></span>
             <span>CREATE</span>
           </span>
         );
       case 'UPDATE':
         return (
           <span className="audit-badge audit-badge-update">
-            <Edit3 size={13} />
+            <span className="audit-badge-dot"></span>
             <span>UPDATE</span>
           </span>
         );
       case 'DELETE':
         return (
           <span className="audit-badge audit-badge-delete">
-            <Trash2 size={13} />
+            <span className="audit-badge-dot"></span>
             <span>DELETE</span>
           </span>
         );
       case 'RESTORE':
         return (
           <span className="audit-badge audit-badge-restore">
-            <RotateCcw size={13} />
+            <span className="audit-badge-dot"></span>
             <span>RESTORE</span>
           </span>
         );
       default:
-        return <span className="audit-badge">{action}</span>;
+        return (
+          <span className="audit-badge">
+            <span className="audit-badge-dot"></span>
+            <span>{action}</span>
+          </span>
+        );
     }
   };
 
@@ -166,45 +185,41 @@ export default function AuditLog() {
           <div className="audit-stats-grid">
             <div className="audit-stat-card">
               <div className="audit-stat-header">
-                <span className="audit-stat-label">Total Audit Events</span>
-                <History size={18} className="audit-stat-icon icon-total" />
+                <span className="audit-stat-label">Total Events</span>
+                <History size={16} className="audit-stat-icon icon-total" />
               </div>
               <div className="audit-stat-value">{stats.total.toLocaleString()}</div>
-              <div className="audit-stat-desc">All historical recorded actions</div>
             </div>
 
             <div className="audit-stat-card">
               <div className="audit-stat-header">
-                <span className="audit-stat-label">Records Created</span>
-                <PlusCircle size={18} className="audit-stat-icon icon-create" />
+                <span className="audit-stat-label">Created</span>
+                <PlusCircle size={16} className="audit-stat-icon icon-create" />
               </div>
               <div className="audit-stat-value text-success">{stats.creates.toLocaleString()}</div>
-              <div className="audit-stat-desc">Personnel additions & imports</div>
             </div>
 
             <div className="audit-stat-card">
               <div className="audit-stat-header">
-                <span className="audit-stat-label">Records Updated</span>
-                <Edit3 size={18} className="audit-stat-icon icon-update" />
+                <span className="audit-stat-label">Updated</span>
+                <Edit3 size={16} className="audit-stat-icon icon-update" />
               </div>
               <div className="audit-stat-value text-primary">{stats.updates.toLocaleString()}</div>
-              <div className="audit-stat-desc">Profile, photo & contact updates</div>
             </div>
 
             <div className="audit-stat-card">
               <div className="audit-stat-header">
-                <span className="audit-stat-label">Records Deleted</span>
-                <Trash2 size={18} className="audit-stat-icon icon-delete" />
+                <span className="audit-stat-label">Deleted</span>
+                <Trash2 size={16} className="audit-stat-icon icon-delete" />
               </div>
               <div className="audit-stat-value text-danger">{stats.deletes.toLocaleString()}</div>
-              <div className="audit-stat-desc">Permanent personnel removals</div>
             </div>
           </div>
 
           {/* Filters & Search Card */}
           <div className="audit-filter-card">
             <div className="audit-search-wrapper">
-              <Search size={16} className="audit-search-icon" />
+              <Search size={15} className="audit-search-icon" />
               <input
                 type="text"
                 value={search}
@@ -219,50 +234,56 @@ export default function AuditLog() {
                   className="audit-search-clear"
                   title="Clear search"
                 >
-                  <X size={15} />
+                  <X size={14} />
                 </button>
               )}
             </div>
 
-            <div className="audit-action-pills">
+            <div className="audit-segmented-control" role="tablist" aria-label="Filter audit action">
               <button
                 type="button"
+                role="tab"
+                aria-selected={actionFilter === 'all'}
                 onClick={() => handleActionChange('all')}
-                className={`audit-pill-btn ${actionFilter === 'all' ? 'active' : ''}`}
+                className={`audit-segment-btn ${actionFilter === 'all' ? 'active' : ''}`}
               >
-                All Actions
+                All
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={actionFilter === 'CREATE'}
                 onClick={() => handleActionChange('CREATE')}
-                className={`audit-pill-btn pill-create ${actionFilter === 'CREATE' ? 'active' : ''}`}
+                className={`audit-segment-btn ${actionFilter === 'CREATE' ? 'active' : ''}`}
               >
-                <PlusCircle size={13} />
-                <span>Created</span>
+                Created
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={actionFilter === 'UPDATE'}
                 onClick={() => handleActionChange('UPDATE')}
-                className={`audit-pill-btn pill-update ${actionFilter === 'UPDATE' ? 'active' : ''}`}
+                className={`audit-segment-btn ${actionFilter === 'UPDATE' ? 'active' : ''}`}
               >
-                <Edit3 size={13} />
-                <span>Updated</span>
+                Updated
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={actionFilter === 'DELETE'}
                 onClick={() => handleActionChange('DELETE')}
-                className={`audit-pill-btn pill-delete ${actionFilter === 'DELETE' ? 'active' : ''}`}
+                className={`audit-segment-btn ${actionFilter === 'DELETE' ? 'active' : ''}`}
               >
-                <Trash2 size={13} />
-                <span>Deleted</span>
+                Deleted
               </button>
               <button
                 type="button"
+                role="tab"
+                aria-selected={actionFilter === 'RESTORE'}
                 onClick={() => handleActionChange('RESTORE')}
-                className={`audit-pill-btn pill-restore ${actionFilter === 'RESTORE' ? 'active' : ''}`}
+                className={`audit-segment-btn ${actionFilter === 'RESTORE' ? 'active' : ''}`}
               >
-                <RotateCcw size={13} />
-                <span>Restored</span>
+                Restored
               </button>
             </div>
           </div>
@@ -333,19 +354,7 @@ export default function AuditLog() {
                           {/* Timestamp */}
                           <td className="audit-td">
                             <div className="audit-time-col">
-                              <span className="audit-time-primary">
-                                {new Date(log.created_at).toLocaleTimeString([], {
-                                  hour: '2-digit',
-                                  minute: '2-digit'
-                                })}
-                              </span>
-                              <span className="audit-date-secondary">
-                                {new Date(log.created_at).toLocaleDateString(undefined, {
-                                  month: 'short',
-                                  day: 'numeric',
-                                  year: 'numeric'
-                                })}
-                              </span>
+                              <span className="audit-time-primary">{formatTimestamp(log.created_at)}</span>
                               <span className="audit-time-ago">{formatTimeAgo(log.created_at)}</span>
                             </div>
                           </td>
