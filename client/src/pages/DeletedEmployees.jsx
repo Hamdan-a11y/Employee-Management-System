@@ -20,7 +20,9 @@ import {
 } from 'lucide-react';
 import './DeletedEmployees.css';
 
-const SERVER_BASE_URL = 'http://localhost:5000';
+const SERVER_BASE_URL = import.meta.env.VITE_API_URL
+  ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '')
+  : 'http://localhost:5000';
 
 const DeletedEmployees = () => {
   const { success, error: notifyError } = useNotification();

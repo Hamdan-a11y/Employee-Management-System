@@ -15,6 +15,7 @@ const {
   getRefreshTokenFromReq,
 } = require('../utils/cookies');
 const { generateCsrfToken } = require('../middleware/csrf');
+const { isAllowedOrigin } = require('../utils/corsOrigins');
 
 // Rate limiter for password reset requests: 5 per IP and 3 per Email per 15 minutes
 const passwordResetLimiter = createPasswordResetLimiter({
@@ -328,7 +329,10 @@ router.post('/forgot-password', passwordResetLimiter, async (req, res) => {
         [user.id, tokenHash, expiresAt]
       );
 
-      const clientUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+      const origin = req.headers.origin;
+      const clientUrl = (origin && isAllowedOrigin(origin))
+        ? origin
+        : (process.env.CLIENT_URL || 'http://localhost:5173');
       const resetUrl = `${clientUrl}/reset-password?token=${rawToken}`;
 
       await sendPasswordResetEmail({

@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node index.js",
     "dev": "nodemon index.js",
-    "test": "node --test --test-concurrency=1 tests/auth.test.js tests/departments.test.js tests/employees.test.js tests/notifications.test.js tests/rbac.test.js tests/search_pagination.test.js tests/attendance.test.js tests/leaves.test.js"
+    "test": "node --test --test-concurrency=1 tests/cors.test.js tests/auth.test.js tests/departments.test.js tests/employees.test.js tests/notifications.test.js tests/rbac.test.js tests/search_pagination.test.js tests/attendance.test.js tests/leaves.test.js"
   },
   "keywords": [],
   "author": "",

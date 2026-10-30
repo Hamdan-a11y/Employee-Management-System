@@ -7,6 +7,7 @@ const path = require('path');
 const config = require('./config/env');
 const pool = require('./db');
 const logger = require('./utils/logger');
+const { allowedOrigins, isAllowedOrigin } = require('./utils/corsOrigins');
 const { apiLimiter, authLimiter } = require('./middleware/rateLimiter');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
@@ -58,18 +59,14 @@ app.use(
           'blob:',
           'http://localhost:5000',
           'http://127.0.0.1:5000',
-          config.clientUrl,
+          'https://*.vercel.app',
+          ...allowedOrigins,
         ].filter(Boolean),
         connectSrc: [
           "'self'",
-          'http://localhost:5173',
-          'http://127.0.0.1:5173',
-          'http://localhost:5174',
-          'http://127.0.0.1:5174',
-          'http://localhost:5175',
-          'http://127.0.0.1:5175',
           'http://localhost:5000',
-          config.clientUrl,
+          'https://*.vercel.app',
+          ...allowedOrigins,
         ].filter(Boolean),
       },
     },
@@ -81,36 +78,12 @@ app.use(
   })
 );
 
-// Explicit CORS allowlist with credentials
-const allowedOrigins = [
-  'http://localhost:5173',
-  'http://127.0.0.1:5173',
-  'http://localhost:5174',
-  'http://127.0.0.1:5174',
-  'http://localhost:5175',
-  'http://127.0.0.1:5175',
-  config.clientUrl,
-].filter(Boolean);
-
-const isDevOrigin = (origin) => {
-  if (!isProduction && origin) {
-    try {
-      const parsed = new URL(origin);
-      if (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') {
-        return true;
-      }
-    } catch (e) {
-      return false;
-    }
-  }
-  return false;
-};
-
+// Explicit CORS middleware supporting both Vercel domains, preview URLs, and configured CLIENT_URL
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (e.g. mobile apps or server-to-server) or matching origins
-      if (!origin || allowedOrigins.includes(origin) || isDevOrigin(origin)) {
+      // Allow requests with no origin (e.g. mobile apps or server-to-server) or verified matching origins
+      if (isAllowedOrigin(origin)) {
         return callback(null, true);
       }
       return callback(new Error(`CORS blocked: Origin ${origin} not in allowlist.`));
