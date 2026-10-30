@@ -1,10 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
-const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { authenticateToken } = require('../middleware/auth');
+const { requirePermission } = require('../middleware/rbac');
 
-// All audit log endpoints are protected and strictly accessible to administrators
-router.use(authenticateToken, requireAdmin);
+// All audit log endpoints are protected and accessible to users with audit.view permission (Admin, HR Manager)
+router.use(authenticateToken, requirePermission('audit.view'));
 
 /**
  * GET /api/audit-logs
