@@ -101,21 +101,18 @@ const DeletedEmployees = () => {
     }
   };
 
-  // Format date helper
-  const formatDate = (isoString) => {
-    if (!isoString) return '—';
-    try {
-      const date = new Date(isoString);
-      return date.toLocaleDateString(undefined, {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    } catch (e) {
-      return isoString;
-    }
+  // Format exact tabular timestamp: YYYY-MM-DD HH:mm:ss
+  const formatTimestamp = (dateString) => {
+    if (!dateString) return '—';
+    const d = new Date(dateString);
+    if (isNaN(d.getTime())) return dateString;
+    const YYYY = d.getFullYear();
+    const MM = String(d.getMonth() + 1).padStart(2, '0');
+    const DD = String(d.getDate()).padStart(2, '0');
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mm = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
   };
 
   const relativeTime = (isoString) => {
@@ -125,7 +122,8 @@ const DeletedEmployees = () => {
       if (diff < 60) return 'Just now';
       if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
       if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-      return `${Math.floor(diff / 86400)}d ago`;
+      if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+      return new Date(isoString).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
     } catch (e) {
       return '';
     }
@@ -174,51 +172,44 @@ const DeletedEmployees = () => {
 
         {/* Stat Cards */}
         <div className="deleted-stats-grid">
-          <div className="card deleted-stat-card">
-            <div className="deleted-stat-icon warning">
-              <Archive size={20} />
+          <div className="deleted-stat-card">
+            <div className="deleted-stat-header">
+              <span className="deleted-stat-label">Archived Personnel</span>
+              <Archive size={16} className="deleted-stat-icon icon-archived" />
             </div>
-            <div>
-              <div className="deleted-stat-label">Archived Records</div>
-              <div className="deleted-stat-value">{deletedEmployees.length}</div>
+            <div className="deleted-stat-value">{deletedEmployees.length}</div>
+          </div>
+
+          <div className="deleted-stat-card">
+            <div className="deleted-stat-header">
+              <span className="deleted-stat-label">Departments Represented</span>
+              <Building2 size={16} className="deleted-stat-icon icon-dept" />
+            </div>
+            <div className="deleted-stat-value">
+              {new Set(deletedEmployees.map((e) => e.department_id).filter(Boolean)).size}
             </div>
           </div>
 
-          <div className="card deleted-stat-card">
-            <div className="deleted-stat-icon primary">
-              <Building2 size={20} />
+          <div className="deleted-stat-card">
+            <div className="deleted-stat-header">
+              <span className="deleted-stat-label">Data Retention</span>
+              <FileText size={16} className="deleted-stat-icon icon-safe" />
             </div>
-            <div>
-              <div className="deleted-stat-label">Departments Represented</div>
-              <div className="deleted-stat-value">
-                {new Set(deletedEmployees.map((e) => e.department_id).filter(Boolean)).size}
-              </div>
-            </div>
-          </div>
-
-          <div className="card deleted-stat-card deleted-info-card">
-            <div className="deleted-stat-icon info">
-              <FileText size={20} />
-            </div>
-            <div>
-              <div className="deleted-stat-label">Zero Data Loss</div>
-              <p className="deleted-stat-desc">
-                Avatars, contact details, uploaded documents, and full audit logs remain preserved in the system.
-              </p>
-            </div>
+            <div className="deleted-stat-value text-success">100% Intact</div>
           </div>
         </div>
 
         {/* Filters Card */}
-        <div className="card deleted-filter-card">
+        <div className="deleted-filter-card">
           <div className="deleted-filters-wrapper">
             <div className="deleted-search-box">
-              <Search size={16} className="deleted-search-icon" />
+              <Search size={15} className="deleted-search-icon" />
               <input
                 type="text"
                 placeholder="Search archived employee by name or email..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
+                className="deleted-search-input"
               />
               {search && (
                 <button
@@ -233,10 +224,11 @@ const DeletedEmployees = () => {
             </div>
 
             <div className="deleted-dept-filter">
-              <Building2 size={16} className="deleted-filter-icon" />
+              <Building2 size={15} className="deleted-filter-icon" />
               <select
                 value={departmentId}
                 onChange={(e) => setDepartmentId(e.target.value)}
+                className="deleted-dept-select"
               >
                 <option value="all">All Departments</option>
                 {departments.map((d) => (
@@ -250,26 +242,24 @@ const DeletedEmployees = () => {
         </div>
 
         {/* Table View */}
-        <div className="card deleted-table-card">
+        <div className="deleted-table-card">
           {loading ? (
             <div className="deleted-loading">
               <div className="deleted-spinner" />
-              <span>Loading archived records...</span>
+              <span>Retrieving archived personnel records...</span>
             </div>
           ) : deletedEmployees.length === 0 ? (
             <div className="deleted-empty-state">
-              <div className="deleted-empty-icon">
-                <CheckCircle size={32} />
-              </div>
+              <Archive size={36} className="deleted-empty-icon" />
               <h3 className="deleted-empty-title">
                 {search || departmentId !== 'all'
-                  ? 'No matching deleted employees'
-                  : 'No deleted employees found'}
+                  ? 'No matching archived records'
+                  : 'No archived personnel records'}
               </h3>
               <p className="deleted-empty-desc">
                 {search || departmentId !== 'all'
-                  ? 'Try clearing your search or department filter.'
-                  : 'All employee records are active. When an employee is removed, they are safely archived here.'}
+                  ? 'No archived personnel matched your active search or department filter.'
+                  : 'All employee records are active in the directory. Soft-deleted staff will appear here for safe recovery.'}
               </p>
               {(search || departmentId !== 'all') && (
                 <button
@@ -278,8 +268,8 @@ const DeletedEmployees = () => {
                     setSearch('');
                     setDepartmentId('all');
                   }}
-                  className="btn btn-secondary"
-                  style={{ marginTop: '1rem' }}
+                  className="btn btn-secondary btn-sm"
+                  style={{ marginTop: '0.75rem' }}
                 >
                   Clear Filters
                 </button>
@@ -291,10 +281,11 @@ const DeletedEmployees = () => {
                 <thead>
                   <tr>
                     <th>Employee</th>
-                    <th>Contact</th>
                     <th>Department</th>
                     <th>Designation</th>
+                    <th>Contact</th>
                     <th>Deleted At</th>
+                    <th>Status</th>
                     <th style={{ textAlign: 'right' }}>Action</th>
                   </tr>
                 </thead>
@@ -318,54 +309,60 @@ const DeletedEmployees = () => {
                                 }}
                               />
                             ) : (
-                              <div className="deleted-user-placeholder">
-                                <User size={16} />
+                              <div className="deleted-avatar-initials">
+                                {emp.name?.charAt(0)?.toUpperCase() || 'U'}
                               </div>
                             )}
-                            <div>
-                              <div className="deleted-user-name">{emp.name}</div>
-                              <div className="deleted-user-id">ID: #{emp.id}</div>
+                            <div className="deleted-user-meta">
+                              <span className="deleted-user-name">{emp.name}</span>
+                              <span className="deleted-user-id">ID #{emp.id}</span>
                             </div>
                           </div>
                         </td>
 
                         <td>
-                          <div className="deleted-contact-cell">
-                            <span className="deleted-email">{emp.email}</span>
-                            <span className="deleted-phone">{emp.phone}</span>
-                          </div>
-                        </td>
-
-                        <td>
-                          <span className="deleted-dept-badge">
+                          <span className="deleted-dept-text">
                             {emp.department_name || 'Unassigned'}
                           </span>
                         </td>
 
                         <td>
-                          <span className="deleted-desig">{emp.designation}</span>
+                          <span className="deleted-desig">{emp.designation || 'Staff'}</span>
+                        </td>
+
+                        <td>
+                          <div className="deleted-contact-cell">
+                            <span className="deleted-email">{emp.email}</span>
+                            {emp.phone && <span className="deleted-phone">{emp.phone}</span>}
+                          </div>
                         </td>
 
                         <td>
                           <div className="deleted-time-cell">
                             <span className="deleted-time-primary">
-                              {formatDate(emp.deleted_at)}
+                              {formatTimestamp(emp.deleted_at)}
                             </span>
                             <span className="deleted-time-rel">
-                              <Clock size={11} />
-                              <span>{relativeTime(emp.deleted_at)}</span>
+                              {relativeTime(emp.deleted_at)}
                             </span>
                           </div>
+                        </td>
+
+                        <td>
+                          <span className="deleted-status-tag">
+                            <span className="deleted-status-dot"></span>
+                            Archived
+                          </span>
                         </td>
 
                         <td style={{ textAlign: 'right' }}>
                           <button
                             type="button"
                             onClick={() => setRestoreTarget(emp)}
-                            className="btn btn-primary btn-sm deleted-restore-btn"
-                            title={`Restore ${emp.name}`}
+                            className="deleted-restore-btn"
+                            title={`Restore ${emp.name} to active directory`}
                           >
-                            <RotateCcw size={14} />
+                            <RotateCcw size={13} strokeWidth={2} />
                             <span>Restore</span>
                           </button>
                         </td>
@@ -383,12 +380,12 @@ const DeletedEmployees = () => {
           <div className="modal-backdrop" onClick={() => !restoring && setRestoreTarget(null)}>
             <div className="modal-card" onClick={(e) => e.stopPropagation()}>
               <div className="modal-header">
-                <div className="deleted-restore-modal-icon">
-                  <RotateCcw size={22} />
-                </div>
-                <div>
-                  <h3 className="modal-title">Restore Employee Record</h3>
-                  <p className="modal-subtitle">Reactivate personnel in the directory</p>
+                <div className="deleted-restore-modal-header">
+                  <RotateCcw size={20} className="deleted-modal-icon" />
+                  <div>
+                    <h3 className="modal-title">Restore Employee Record</h3>
+                    <p className="modal-subtitle">Reactivate personnel in the directory</p>
+                  </div>
                 </div>
               </div>
 
