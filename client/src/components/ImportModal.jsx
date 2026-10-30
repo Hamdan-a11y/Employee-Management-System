@@ -360,7 +360,7 @@ const ImportModal = ({ isOpen, onClose, onImportSuccess }) => {
                             </td>
                             <td>{item.designation}</td>
                             <td>
-                              <span className={`badge ${item.status === 'Active' ? 'badge-active' : 'badge-inactive'}`}>
+                              <span className={`badge-status ${item.status === 'Active' ? 'badge-status-active' : 'badge-status-inactive'}`}>
                                 {item.status}
                               </span>
                             </td>

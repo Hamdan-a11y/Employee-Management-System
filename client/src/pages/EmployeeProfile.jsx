@@ -575,8 +575,8 @@ export default function EmployeeProfile() {
           <div className="profile-header-name-row">
             <h1 className="profile-employee-name">{employee.name}</h1>
             <span
-              className={`badge ${
-                employee.status === 'Active' ? 'badge-active' : 'badge-inactive'
+              className={`badge-status ${
+                employee.status === 'Active' ? 'badge-status-active' : 'badge-status-inactive'
               }`}
             >
               {employee.status}
@@ -778,8 +778,8 @@ export default function EmployeeProfile() {
                   </div>
                   <div className="profile-detail-value">
                     <span
-                      className={`badge ${
-                        employee.status === 'Active' ? 'badge-active' : 'badge-inactive'
+                      className={`badge-status ${
+                        employee.status === 'Active' ? 'badge-status-active' : 'badge-status-inactive'
                       }`}
                     >
                       {employee.status}

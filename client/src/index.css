@@ -175,10 +175,73 @@ body {
   font-weight: 600;
   border-radius: 9999px;
 }
-.badge-active {
-  background-color: var(--success-bg);
-  color: var(--success-text);
+
+/* Status Indicator: Active (matches reference design: vibrant green dot + clean dark text) */
+.badge-status,
+.badge-status-active,
+.badge-status-inactive {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.25;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
 }
+
+.badge-status-active,
+.badge.badge-active,
+.badge-active {
+  background-color: transparent !important;
+  color: #0f172a !important;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.badge-status-active::before,
+.badge.badge-active:not(:has(svg))::before,
+.badge-active:not(:has(svg))::before {
+  content: '';
+  display: inline-block;
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  background-color: #10b981;
+  flex-shrink: 0;
+}
+
+.badge-status-inactive {
+  background-color: transparent !important;
+  color: #64748b !important;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+}
+
+.badge-status-inactive::before {
+  content: '';
+  display: inline-block;
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  background-color: #94a3b8;
+  flex-shrink: 0;
+}
+
 .badge-inactive {
   background-color: #f1f5f9;
   color: #64748b;

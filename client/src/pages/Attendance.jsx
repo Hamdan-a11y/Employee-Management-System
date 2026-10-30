@@ -681,10 +681,10 @@ const Attendance = () => {
                           <td className="attendance-td">
                             <span className={`badge ${
                               record.status === 'Present' 
-                                ? 'badge-active' 
+                                ? 'badge-status-active' 
                                 : record.status === 'Late' 
                                   ? 'badge-late' 
-                                  : 'badge-inactive'
+                                  : 'badge-status-inactive'
                             }`}>
                               {record.status}
                             </span>

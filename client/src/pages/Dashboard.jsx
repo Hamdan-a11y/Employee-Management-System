@@ -454,7 +454,7 @@ const Dashboard = () => {
                             )}
                           </div>
                         </div>
-                        <span className={`badge ${emp.status === 'Active' ? 'badge-active' : 'badge-inactive'}`}>
+                        <span className={`badge-status ${emp.status === 'Active' ? 'badge-status-active' : 'badge-status-inactive'}`}>
                           {emp.status}
                         </span>
                       </div>
