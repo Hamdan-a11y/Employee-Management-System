@@ -16,6 +16,8 @@ import EmployeeForm from './pages/EmployeeForm';
 import EmployeeProfile from './pages/EmployeeProfile';
 import DeletedEmployees from './pages/DeletedEmployees';
 import AuditLog from './pages/AuditLog';
+import Attendance from './pages/Attendance';
+import Leaves from './pages/Leaves';
 
 function App() {
   return (
@@ -40,7 +42,7 @@ function App() {
           <Route
             path="/departments"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
                 <DepartmentList />
               </ProtectedRoute>
             }
@@ -48,7 +50,7 @@ function App() {
           <Route
             path="/employees"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
                 <EmployeeList />
               </ProtectedRoute>
             }
@@ -56,7 +58,7 @@ function App() {
           <Route
             path="/employees/new"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager']}>
                 <EmployeeForm />
               </ProtectedRoute>
             }
@@ -72,7 +74,7 @@ function App() {
           <Route
             path="/employees/edit/:id"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
                 <EmployeeForm />
               </ProtectedRoute>
             }
@@ -88,8 +90,24 @@ function App() {
           <Route
             path="/audit-logs"
             element={
-              <ProtectedRoute allowedRoles={['admin']}>
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager']}>
                 <AuditLog />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance"
+            element={
+              <ProtectedRoute>
+                <Attendance />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/leaves"
+            element={
+              <ProtectedRoute>
+                <Leaves />
               </ProtectedRoute>
             }
           />
