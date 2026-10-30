@@ -204,9 +204,9 @@ const Dashboard = () => {
                 <div className="hiring-chart-container">
                   <div className="hiring-bars-wrapper">
                     {hiringData.map((item, index) => {
-                      const barHeightPct = maxHires > 0 
-                        ? Math.max(item.count > 0 ? 12 : 3, Math.round((item.count / maxHires) * 100))
-                        : 3;
+                      const barHeightPct = maxHires > 0 && item.count > 0 
+                        ? Math.max(12, Math.round((item.count / maxHires) * 100))
+                        : 0;
                       const isLatest = index === hiringData.length - 1;
 
                       return (
@@ -229,10 +229,12 @@ const Dashboard = () => {
 
                           {/* Track and Fill */}
                           <div className="hiring-bar-track">
-                            <div 
-                              className={`hiring-bar-fill ${isLatest ? 'latest' : ''}`}
-                              style={{ height: `${barHeightPct}%` }}
-                            />
+                            {item.count > 0 && (
+                              <div 
+                                className={`hiring-bar-fill ${isLatest ? 'latest' : ''}`}
+                                style={{ height: `${barHeightPct}%` }}
+                              />
+                            )}
                           </div>
 
                           {/* Month Label */}
@@ -375,7 +377,7 @@ const Dashboard = () => {
                       <div key={dept.id} className="dashboard-dept-chart-item">
                         <div className="dashboard-dept-header">
                           <div className="dashboard-dept-info">
-                            <Briefcase size={16} color="var(--primary)" />
+                            <Briefcase size={16} color="var(--text-secondary)" />
                             <span className="dashboard-dept-name">
                               {dept.name}
                             </span>
