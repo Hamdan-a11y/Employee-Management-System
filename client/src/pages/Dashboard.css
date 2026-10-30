@@ -93,26 +93,28 @@
 }
 
 .dashboard-stat-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-md);
+  width: auto;
+  height: auto;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  background-color: transparent !important;
 }
 
 .dashboard-stat-icon.primary {
-  background-color: var(--primary-light);
-  color: var(--primary);
+  background-color: transparent !important;
+  color: #09090b;
 }
 
 .dashboard-stat-icon.success {
-  background-color: var(--success-bg);
-  color: var(--success-text);
+  background-color: transparent !important;
+  color: #059669;
 }
 
 .dashboard-stat-icon.muted {
-  background-color: #f1f5f9;
+  background-color: transparent !important;
   color: #64748b;
 }
 

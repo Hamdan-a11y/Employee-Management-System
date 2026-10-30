@@ -50,17 +50,19 @@
 }
 
 .balance-icon-wrap {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md, 0.5rem);
+  width: auto;
+  height: auto;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  background-color: transparent !important;
 }
 
 .bg-emerald-soft {
-  background-color: #ecfdf5;
+  background-color: transparent !important;
+}
 }
 
 .text-emerald {
@@ -72,7 +74,7 @@
 }
 
 .bg-amber-soft {
-  background-color: #fffbeb;
+  background-color: transparent !important;
 }
 
 .text-amber {
@@ -84,7 +86,7 @@
 }
 
 .bg-indigo-soft {
-  background-color: #eef2ff;
+  background-color: transparent !important;
 }
 
 .text-indigo {
@@ -96,7 +98,7 @@
 }
 
 .bg-primary-soft {
-  background-color: #eff6ff;
+  background-color: transparent !important;
 }
 
 .text-primary {

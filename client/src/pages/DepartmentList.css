@@ -70,22 +70,24 @@
 }
 
 .dept-stat-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
+  width: auto;
+  height: auto;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
+  background-color: transparent !important;
 }
 
 .dept-stat-icon.primary {
-  background-color: var(--primary-light);
-  color: var(--primary);
+  background-color: transparent !important;
+  color: #09090b;
 }
 
 .dept-stat-icon.success {
-  background-color: var(--success-bg);
-  color: var(--success-text);
+  background-color: transparent !important;
+  color: #059669;
 }
 
 .dept-stat-label {

@@ -77,28 +77,29 @@
 }
 
 .deleted-stat-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
+  width: auto;
+  height: auto;
+  border-radius: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  background-color: transparent !important;
 }
 
 .deleted-stat-icon.warning {
-  background-color: #fef2f2;
+  background-color: transparent !important;
   color: #dc2626;
 }
 
 .deleted-stat-icon.primary {
-  background-color: #eef2ff;
-  color: #4f46e5;
+  background-color: transparent !important;
+  color: #09090b;
 }
 
 .deleted-stat-icon.info {
-  background-color: #f0fdfa;
-  color: #0d9488;
+  background-color: transparent !important;
+  color: #0284c7;
 }
 
 .deleted-stat-label {
