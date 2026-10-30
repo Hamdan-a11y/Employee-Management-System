@@ -59,7 +59,7 @@
 }
 
 .toast-icon.info {
-  color: #4f46e5;
+  color: var(--primary);
 }
 
 .toast-text-content {
@@ -118,7 +118,7 @@
 }
 
 .toast-item.toast-info {
-  border-left: 4px solid #4f46e5;
+  border-left: 4px solid var(--primary);
 }
 
 /* Progress Bar Track */
@@ -149,7 +149,7 @@
 }
 
 .toast-progress-bar.toast-progress-info {
-  background-color: #4f46e5;
+  background-color: var(--primary);
 }
 
 @media (max-width: 640px) {

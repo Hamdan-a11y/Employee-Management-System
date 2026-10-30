@@ -12,9 +12,9 @@
   --border-color: #e2e8f0;
   --border-hover: #cbd5e1;
   
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
-  --primary-light: #eef2ff;
+  --primary: #0f172a;
+  --primary-hover: #1e293b;
+  --primary-light: #f1f5f9;
   --primary-text: #ffffff;
 
   --success-bg: #ecfdf5;
@@ -106,9 +106,11 @@ body {
 .btn-primary {
   background-color: var(--primary);
   color: var(--primary-text);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
 }
 .btn-primary:hover {
   background-color: var(--primary-hover);
+  box-shadow: 0 2px 4px rgba(15, 23, 42, 0.14);
 }
 
 .btn-secondary {
@@ -149,7 +151,7 @@ body {
 
 .input:focus, .select:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.12);
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08);
 }
 
 .badge {

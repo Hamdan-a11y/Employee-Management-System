@@ -234,7 +234,7 @@
 }
 
 .hiring-bar-fill.latest {
-  background: linear-gradient(180deg, #6366f1 0%, #4f46e5 100%);
+  background: linear-gradient(180deg, #334155 0%, #0f172a 100%);
 }
 
 .hiring-bar-slot:hover .hiring-bar-fill {
