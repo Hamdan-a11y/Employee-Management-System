@@ -17,7 +17,7 @@ const createLimiter = ({
 
   return (req, res, next) => {
     // Bypass rate limiting in automated testing environments
-    if (process.env.NODE_ENV === 'test') {
+    if (process.env.NODE_ENV === 'test' || process.env.RATE_LIMIT_DISABLED === 'true') {
       return next();
     }
 
