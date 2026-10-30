@@ -1,6 +1,7 @@
 const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const { getAccessTokenFromReq } = require('../utils/cookies');
+const { getPermissionsForRole } = require('../config/permissions');
 
 const authenticateToken = async (req, res, next) => {
   // Read token from HttpOnly cookie first, then fallback to header
@@ -16,9 +17,9 @@ const authenticateToken = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
-    // Fetch user details including role and linked employee_id
+    // Fetch user details including role, linked employee_id, and department_id
     const [users] = await pool.query(
-      'SELECT id, name, email, role, employee_id, token_version FROM users WHERE id = ?',
+      'SELECT id, name, email, role, employee_id, department_id, token_version FROM users WHERE id = ?',
       [decoded.id]
     );
 
@@ -36,10 +37,20 @@ const authenticateToken = async (req, res, next) => {
     }
 
     let linkedEmployeeId = user.employee_id;
+    let linkedDeptId = user.department_id;
+
     if (!linkedEmployeeId) {
-      const [matched] = await pool.query('SELECT id FROM employees WHERE LOWER(email) = LOWER(?)', [user.email]);
+      const [matched] = await pool.query('SELECT id, department_id FROM employees WHERE LOWER(email) = LOWER(?)', [user.email]);
       if (matched.length > 0) {
         linkedEmployeeId = matched[0].id;
+        if (!linkedDeptId) {
+          linkedDeptId = matched[0].department_id;
+        }
+      }
+    } else if (!linkedDeptId) {
+      const [matched] = await pool.query('SELECT department_id FROM employees WHERE id = ?', [linkedEmployeeId]);
+      if (matched.length > 0) {
+        linkedDeptId = matched[0].department_id;
       }
     }
 
@@ -48,7 +59,9 @@ const authenticateToken = async (req, res, next) => {
       name: user.name,
       email: user.email,
       role: user.role || 'employee',
-      employee_id: linkedEmployeeId || null
+      employee_id: linkedEmployeeId || null,
+      department_id: linkedDeptId || null,
+      permissions: getPermissionsForRole(user.role || 'employee'),
     };
 
     next();
