@@ -368,41 +368,44 @@
   margin-top: 2px;
 }
 
-/* Action Status Badges (Dot + Status Tag) */
+/* Action Status Indicators (Clean Dot + Action Name, No Container Box) */
 .audit-badge {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  gap: 6px;
+  padding: 0 !important;
+  background-color: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #0f172a;
+  letter-spacing: 0.02em;
   text-transform: uppercase;
-  line-height: 1;
+  line-height: 1.25;
+  white-space: nowrap;
 }
 
 .audit-badge-dot {
-  width: 6px;
-  height: 6px;
+  width: 6.5px;
+  height: 6.5px;
   border-radius: 50%;
   display: inline-block;
+  flex-shrink: 0;
+  background-color: #64748b;
 }
 
 .audit-badge-create {
-  background-color: #f0fdf4;
-  color: #15803d;
-  border: 1px solid #bbf7d0;
+  color: #0f172a;
 }
 
 .audit-badge-create .audit-badge-dot {
-  background-color: #16a34a;
+  background-color: #059669;
 }
 
 .audit-badge-update {
-  background-color: #eff6ff;
-  color: #1d4ed8;
-  border: 1px solid #bfdbfe;
+  color: #0f172a;
 }
 
 .audit-badge-update .audit-badge-dot {
@@ -410,9 +413,7 @@
 }
 
 .audit-badge-delete {
-  background-color: #fef2f2;
-  color: #b91c1c;
-  border: 1px solid #fecaca;
+  color: #0f172a;
 }
 
 .audit-badge-delete .audit-badge-dot {
@@ -420,9 +421,7 @@
 }
 
 .audit-badge-restore {
-  background-color: #f0fdfa;
-  color: #0f766e;
-  border: 1px solid #99f6e4;
+  color: #0f172a;
 }
 
 .audit-badge-restore .audit-badge-dot {
