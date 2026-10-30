@@ -102,6 +102,7 @@ describe('EmployeeForm Component', () => {
     fireEvent.change(screen.getByLabelText(/designation/i), { target: { value: 'QA Engineer' } });
     fireEvent.change(screen.getByLabelText(/email address/i), { target: { value: 'charlie@company.com' } });
     fireEvent.change(screen.getByLabelText(/phone number/i), { target: { value: '+1-555-010-9988' } });
+    fireEvent.change(screen.getByLabelText(/department \*/i), { target: { value: '1' } });
 
     fireEvent.click(screen.getByRole('button', { name: /save employee/i }));
 
