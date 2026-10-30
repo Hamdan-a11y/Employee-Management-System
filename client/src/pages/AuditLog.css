@@ -24,19 +24,6 @@
   gap: var(--space-4);
 }
 
-.audit-header-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
-  background-color: var(--primary-light);
-  color: var(--primary);
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  margin-bottom: var(--space-2);
-}
-
 .audit-title {
   font-size: 1.625rem;
   font-weight: 700;

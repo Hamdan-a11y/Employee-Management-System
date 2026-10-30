@@ -145,10 +145,6 @@ export default function AuditLog() {
           {/* Header */}
           <div className="audit-header">
             <div>
-              <div className="audit-header-badge">
-                <ShieldCheck size={14} />
-                <span>Security & Compliance</span>
-              </div>
               <h1 className="audit-title">System Audit Log</h1>
               <p className="audit-subtitle">
                 Immutable, chronological activity trail tracking all employee creations, modifications, and deletions.

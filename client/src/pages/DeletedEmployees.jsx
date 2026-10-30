@@ -139,10 +139,6 @@ const DeletedEmployees = () => {
         {/* Header */}
         <div className="deleted-header">
           <div>
-            <div className="deleted-header-badge">
-              <Archive size={14} />
-              <span>Safety & Data Preservation</span>
-            </div>
             <h1 className="deleted-title">Deleted Employees Archive</h1>
             <p className="deleted-subtitle">
               Review soft-deleted personnel records and restore team members back to the active directory.

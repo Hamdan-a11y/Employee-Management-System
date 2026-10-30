@@ -24,21 +24,6 @@
   flex-wrap: wrap;
 }
 
-.deleted-header-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background-color: #fef2f2;
-  color: #991b1b;
-  border: 1px solid #fecaca;
-  padding: 4px 10px;
-  border-radius: 9999px;
-  font-size: 0.75rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  margin-bottom: 0.5rem;
-}
-
 .deleted-title {
   font-size: 1.75rem;
   font-weight: 800;
