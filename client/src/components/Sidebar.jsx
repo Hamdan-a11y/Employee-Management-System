@@ -10,16 +10,43 @@ import {
   X,
   Briefcase,
   History,
-  Archive
+  Archive,
+  Clock,
+  Calendar
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import './Sidebar.css';
 
 const Sidebar = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, can, isAdmin: authIsAdmin, isEmployee: authIsEmployee } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+
+  const isAdmin = authIsAdmin !== undefined ? authIsAdmin : user?.role === 'admin';
+  const isEmployee = authIsEmployee !== undefined ? authIsEmployee : user?.role === 'employee';
+  const isHR = user?.role === 'hr_manager';
+  const isDeptManager = user?.role === 'department_manager';
+
+  const checkPerm = (perm) => {
+    if (typeof can === 'function') return can(perm);
+    if (user?.role === 'admin') return true;
+    return Array.isArray(user?.permissions) && user.permissions.includes(perm);
+  };
+
+  const getRoleBadge = (role) => {
+    switch (role) {
+      case 'admin':
+        return { label: 'Admin', className: 'role-admin' };
+      case 'hr_manager':
+        return { label: 'HR Manager', className: 'role-hr' };
+      case 'department_manager':
+        return { label: 'Dept Manager', className: 'role-manager' };
+      default:
+        return { label: 'Employee', className: 'role-employee' };
+    }
+  };
+  const roleBadge = getRoleBadge(user?.role);
 
   // Close mobile drawer when route changes
   useEffect(() => {
@@ -54,8 +81,6 @@ const Sidebar = () => {
     navigate('/login');
   };
 
-  const isAdmin = user?.role === 'admin';
-
   const navItems = [
     {
       to: '/dashboard',
@@ -64,34 +89,56 @@ const Sidebar = () => {
     },
   ];
 
-  if (isAdmin) {
-    navItems.push(
-      {
-        to: '/departments',
-        label: 'Departments',
-        icon: Building2,
-      },
-      {
-        to: '/employees',
-        label: 'Employees',
-        icon: Users,
-      },
-      {
-        to: '/employees/deleted',
-        label: 'Deleted Archive',
-        icon: Archive,
-      },
-      {
-        to: '/audit-logs',
-        label: 'Audit Log',
-        icon: History,
-      }
-    );
-  } else {
+  if (!isEmployee && (isAdmin || checkPerm('department.view'))) {
+    navItems.push({
+      to: '/departments',
+      label: 'Departments',
+      icon: Building2,
+    });
+  }
+
+  if (!isEmployee && (isAdmin || isHR || isDeptManager || checkPerm('employee.view'))) {
+    navItems.push({
+      to: '/employees',
+      label: 'Employees',
+      icon: Users,
+    });
+  }
+
+  if (isEmployee) {
     navItems.push({
       to: user?.employee_id ? `/employees/${user.employee_id}` : '/employees/me',
       label: 'My Profile',
       icon: Briefcase,
+    });
+  }
+
+  navItems.push(
+    {
+      to: '/attendance',
+      label: 'Attendance',
+      icon: Clock,
+    },
+    {
+      to: '/leaves',
+      label: 'Leaves',
+      icon: Calendar,
+    }
+  );
+
+  if (isAdmin) {
+    navItems.push({
+      to: '/employees/deleted',
+      label: 'Deleted Archive',
+      icon: Archive,
+    });
+  }
+
+  if (isAdmin || (isHR && checkPerm('audit.view'))) {
+    navItems.push({
+      to: '/audit-logs',
+      label: 'Audit Log',
+      icon: History,
     });
   }
 
@@ -194,8 +241,8 @@ const Sidebar = () => {
                 <span className="sidebar-user-name" title={user?.name || 'User'}>
                   {user?.name || 'User'}
                 </span>
-                <span className={`sidebar-role-badge ${isAdmin ? 'role-admin' : 'role-employee'}`}>
-                  {isAdmin ? 'Admin' : 'Employee'}
+                <span className={`sidebar-role-badge ${roleBadge.className}`}>
+                  {roleBadge.label}
                 </span>
               </div>
               <span className="sidebar-user-email" title={user?.email || ''}>
