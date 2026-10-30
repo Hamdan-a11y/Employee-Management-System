@@ -8,6 +8,7 @@ const { sendPasswordResetEmail } = require('../services/mailer');
 const { createPasswordResetLimiter } = require('../middleware/rateLimiter');
 const authenticateToken = require('../middleware/auth');
 const { notifyUser } = require('../services/notificationService');
+const { getPermissionsForRole } = require('../config/permissions');
 const {
   setAuthCookies,
   clearAuthCookies,
@@ -220,7 +221,9 @@ router.post('/login', async (req, res) => {
         name: user.name,
         email: user.email,
         role: user.role || 'employee',
-        employee_id: employeeId || null
+        employee_id: employeeId || null,
+        department_id: user.department_id || null,
+        permissions: getPermissionsForRole(user.role || 'employee'),
       },
     });
   } catch (error) {
