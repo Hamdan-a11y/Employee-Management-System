@@ -125,12 +125,14 @@ const NotificationBell = () => {
         aria-label={`Notifications (${unreadCount} unread)`}
         aria-expanded={isOpen}
       >
-        <Bell size={18} />
-        {unreadCount > 0 && (
-          <span className="notif-badge" title={`${unreadCount} unread notifications`}>
-            {unreadCount > 9 ? '9+' : unreadCount}
-          </span>
-        )}
+        <span className="notif-icon-wrap">
+          <Bell size={16} strokeWidth={2} />
+          {unreadCount > 0 && (
+            <span className="notif-badge" title={`${unreadCount} unread notifications`}>
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+        </span>
       </button>
 
       {isOpen && (
