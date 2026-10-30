@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { requirePermission } = require('../middleware/rbac');
 const { notifyAdmins } = require('../services/notificationService');
 
 // Protect all department routes with token authentication
@@ -55,7 +56,7 @@ router.get('/:id', async (req, res) => {
 });
 
 // POST / - Create a new department (Admin only)
-router.post('/', requireAdmin, async (req, res) => {
+router.post('/', requirePermission('department.manage'), async (req, res) => {
   try {
     const { name } = req.body;
 
@@ -104,7 +105,7 @@ router.post('/', requireAdmin, async (req, res) => {
 });
 
 // PUT /:id - Update an existing department (Admin only)
-router.put('/:id', requireAdmin, async (req, res) => {
+router.put('/:id', requirePermission('department.manage'), async (req, res) => {
   try {
     const { id } = req.params;
     const { name } = req.body;
@@ -153,7 +154,7 @@ router.put('/:id', requireAdmin, async (req, res) => {
 });
 
 // DELETE /:id - Delete a department (Admin only)
-router.delete('/:id', requireAdmin, async (req, res) => {
+router.delete('/:id', requirePermission('department.manage'), async (req, res) => {
   const connection = await pool.getConnection();
   try {
     const { id } = req.params;
