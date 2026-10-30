@@ -3,36 +3,30 @@ import { useNavigate } from 'react-router-dom';
 import { useNotification } from '../context/NotificationContext';
 import {
   Bell,
+  Minus,
+  RotateCw,
   Check,
-  CheckCheck,
-  Trash2,
   X,
   ExternalLink,
   ShieldAlert,
   User,
   UserCheck,
   Briefcase,
-  Layers,
-  Sparkles,
   Inbox
 } from 'lucide-react';
 import './NotificationBell.css';
 
-const formatTimeAgo = (dateStr) => {
+const formatTimestamp = (dateStr) => {
   if (!dateStr) return '';
-  const now = new Date();
-  const past = new Date(dateStr);
-  const diffInSeconds = Math.floor((now - past) / 1000);
-
-  if (diffInSeconds < 60) return 'Just now';
-  const diffInMinutes = Math.floor(diffInSeconds / 60);
-  if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-  const diffInHours = Math.floor(diffInMinutes / 60);
-  if (diffInHours < 24) return `${diffInHours}h ago`;
-  const diffInDays = Math.floor(diffInHours / 24);
-  if (diffInDays < 7) return `${diffInDays}d ago`;
-
-  return past.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return dateStr;
+  const YYYY = d.getFullYear();
+  const MM = String(d.getMonth() + 1).padStart(2, '0');
+  const DD = String(d.getDate()).padStart(2, '0');
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  const ss = String(d.getSeconds()).padStart(2, '0');
+  return `${YYYY}-${MM}-${DD} ${hh}:${mm}:${ss}`;
 };
 
 const NotificationBell = () => {
@@ -105,14 +99,14 @@ const NotificationBell = () => {
   const getTypeIcon = (type) => {
     switch (type) {
       case 'security':
-        return <ShieldAlert size={16} className="notif-type-icon icon-security" />;
+        return <ShieldAlert size={18} strokeWidth={2} />;
       case 'account':
-        return <User size={16} className="notif-type-icon icon-account" />;
+        return <User size={18} strokeWidth={2} />;
       case 'profile':
-        return <UserCheck size={16} className="notif-type-icon icon-profile" />;
+        return <UserCheck size={18} strokeWidth={2} />;
       case 'system':
       default:
-        return <Briefcase size={16} className="notif-type-icon icon-system" />;
+        return <Bell size={18} strokeWidth={2} />;
     }
   };
 
@@ -137,59 +131,59 @@ const NotificationBell = () => {
 
       {isOpen && (
         <div className="notif-popover" role="dialog" aria-modal="true" aria-label="Notifications panel">
-          {/* Popover Header */}
+          {/* Header Row */}
           <div className="notif-header">
-            <div className="notif-header-title-row">
-              <div className="notif-title-group">
-                <span className="notif-title">Notifications</span>
-                {unreadCount > 0 && (
-                  <span className="notif-header-count">{unreadCount} new</span>
-                )}
-              </div>
+            <span className="notif-header-title">Notifications</span>
+            <button
+              type="button"
+              onClick={() => setIsOpen(false)}
+              className="notif-minimize-btn"
+              title="Close panel"
+              aria-label="Close notifications"
+            >
+              <Minus size={16} />
+            </button>
+          </div>
 
-              <div className="notif-header-actions">
-                {unreadCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={markAllAsRead}
-                    className="notif-header-btn"
-                    title="Mark all notifications as read"
-                  >
-                    <CheckCheck size={14} />
-                    <span>Read all</span>
-                  </button>
-                )}
-                {notifications.some((n) => n.is_read) && (
-                  <button
-                    type="button"
-                    onClick={clearRead}
-                    className="notif-header-btn text-muted"
-                    title="Clear all read notifications"
-                  >
-                    <Trash2 size={13} />
-                    <span>Clear read</span>
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Filter Tabs */}
-            <div className="notif-tabs">
+          {/* Subheader Toolbar */}
+          <div className="notif-toolbar">
+            <div className="notif-segmented-pill">
               <button
                 type="button"
-                className={`notif-tab ${filter === 'all' ? 'active' : ''}`}
-                onClick={() => setFilter('all')}
-              >
-                All ({notifications.length})
-              </button>
-              <button
-                type="button"
-                className={`notif-tab ${filter === 'unread' ? 'active' : ''}`}
+                className={`notif-pill-btn ${filter === 'unread' ? 'active' : ''}`}
                 onClick={() => setFilter('unread')}
               >
-                Unread ({unreadCount})
+                Unread
+              </button>
+              <button
+                type="button"
+                className={`notif-pill-btn ${filter === 'all' ? 'active' : ''}`}
+                onClick={() => setFilter('all')}
+              >
+                All
               </button>
             </div>
+
+            <button
+              type="button"
+              onClick={markAllAsRead}
+              className="notif-mark-all-btn"
+              disabled={unreadCount === 0}
+              aria-label="Mark all as read (read all)"
+              title="Mark all notifications as read"
+            >
+              Mark all as read
+            </button>
+
+            <button
+              type="button"
+              onClick={() => fetchNotifications()}
+              className="notif-refresh-icon-btn"
+              title="Refresh notifications"
+              aria-label="Refresh notifications"
+            >
+              <RotateCw size={14} className={loadingNotifications ? 'spin-icon' : ''} />
+            </button>
           </div>
 
           {/* Notification List */}
@@ -202,13 +196,13 @@ const NotificationBell = () => {
             ) : filteredNotifications.length === 0 ? (
               <div className="notif-empty-state">
                 <div className="notif-empty-icon-wrapper">
-                  <Inbox size={26} />
+                  <Bell size={22} strokeWidth={2} />
                 </div>
                 <p className="notif-empty-title">All caught up!</p>
                 <p className="notif-empty-desc">
                   {filter === 'unread'
                     ? 'No unread notifications right now.'
-                    : 'Important activity and account updates will appear here.'}
+                    : 'The instance has been successfully created and is now available to use.'}
                 </p>
               </div>
             ) : (
@@ -218,17 +212,14 @@ const NotificationBell = () => {
                   className={`notif-item ${notif.is_read ? 'read' : 'unread'} ${notif.link ? 'clickable' : ''}`}
                   onClick={() => handleNotificationClick(notif)}
                 >
-                  <div className="notif-item-icon-col">
+                  <div className="notif-item-icon-box">
                     {getTypeIcon(notif.type)}
                   </div>
 
-                  <div className="notif-item-content">
-                    <div className="notif-item-top">
-                      <span className="notif-item-title">{notif.title}</span>
-                      <span className="notif-item-time">{formatTimeAgo(notif.created_at)}</span>
-                    </div>
-
-                    <p className="notif-item-msg">{notif.message}</p>
+                  <div className="notif-item-body">
+                    <div className="notif-item-title">{notif.title}</div>
+                    <div className="notif-item-msg">{notif.message}</div>
+                    <div className="notif-item-time">{formatTimestamp(notif.created_at)}</div>
 
                     {notif.link && (
                       <span className="notif-item-link-hint">
