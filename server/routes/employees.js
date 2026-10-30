@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const pool = require('../db');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
+const { requirePermission, verifyDepartmentAccess } = require('../middleware/rbac');
 const multer = require('multer');
 const { logAudit } = require('../services/auditLogger');
 const { notifyUser, notifyEmployeeUser, notifyAdmins } = require('../services/notificationService');
@@ -118,11 +119,196 @@ router.param('id', (req, res, next, id) => {
   next();
 });
 
+// Allowed sort columns map to protect against SQL injection
+const EMPLOYEE_SORT_COLUMNS = {
+  id: 'e.id',
+  name: 'e.name',
+  email: 'e.email',
+  phone: 'e.phone',
+  department: 'd.name',
+  department_name: 'd.name',
+  designation: 'e.designation',
+  status: 'e.status',
+  created_at: 'e.created_at',
+  joining_date: 'e.created_at'
+};
+
+/**
+ * Builds dynamic WHERE clause and parameters for employee filtering and search.
+ */
+function buildEmployeeFilterQuery(queryParams, user, { isDeleted = false } = {}) {
+  const {
+    search,
+    department_id,
+    designation,
+    status,
+    startDate,
+    endDate
+  } = queryParams;
+
+  let whereClause = isDeleted ? ' WHERE e.deleted_at IS NOT NULL' : ' WHERE e.deleted_at IS NULL';
+  const params = [];
+
+  // 1. Search by employee name, email, phone, and employee ID (supports #2, 2, EMP-2, etc.)
+  if (search && search.trim() !== '') {
+    const rawSearch = search.trim();
+    const term = `%${rawSearch}%`;
+
+    // Strip common ID prefixes if present: '#', 'EMP-', 'EMP', 'ID:', 'ID '
+    const normalizedIdStr = rawSearch
+      .replace(/^id[:=\s]*/i, '')
+      .replace(/^#\s*/, '')
+      .replace(/^emp-?\s*/i, '')
+      .trim();
+    const parsedId = parseInt(normalizedIdStr, 10);
+    const isExplicitId = !isNaN(parsedId) && parsedId > 0 && /^(#|emp-?|id[:=\s])/i.test(rawSearch);
+    const isPureNumber = /^\d+$/.test(rawSearch);
+
+    if (isExplicitId) {
+      // User specifically formatted an ID search like "#2", "EMP-2", "ID: 2"
+      whereClause += ' AND (e.id = ? OR CONCAT("#", e.id) = ? OR CONCAT("EMP-", LPAD(e.id, 4, "0")) = ?)';
+      params.push(parsedId, rawSearch, rawSearch);
+    } else if (isPureNumber) {
+      // User typed a pure number e.g. "2" or "101" -> match exact ID, partial ID string, or name/email/phone
+      const idTerm = `%${rawSearch}%`;
+      whereClause += ' AND (e.id = ? OR CAST(e.id AS CHAR) LIKE ? OR CONCAT("#", e.id) LIKE ? OR e.name LIKE ? OR e.email LIKE ? OR e.phone LIKE ?)';
+      params.push(parsedId, idTerm, idTerm, term, term, term);
+    } else {
+      // General text search (e.g. "Hamdan", "alex@example.com", "Engineer")
+      whereClause += ' AND (e.name LIKE ? OR e.email LIKE ? OR e.phone LIKE ? OR CAST(e.id AS CHAR) LIKE ? OR CONCAT("#", e.id) LIKE ?)';
+      params.push(term, term, term, term, term);
+    }
+  }
+
+  // 2. Filter by department (Scoped strictly for Department Managers)
+  if (user && user.role === 'department_manager') {
+    if (!user.department_id) {
+      whereClause += ' AND 1=0';
+    } else {
+      whereClause += ' AND e.department_id = ?';
+      params.push(user.department_id);
+    }
+  } else if (department_id && department_id !== 'all') {
+    whereClause += ' AND e.department_id = ?';
+    params.push(department_id);
+  }
+
+  // 3. Filter by designation
+  if (designation && designation !== 'all' && designation.trim() !== '') {
+    whereClause += ' AND e.designation = ?';
+    params.push(designation.trim());
+  }
+
+  // 4. Filter by status (Active, Inactive)
+  if (status && status !== 'all' && status.trim() !== '') {
+    whereClause += ' AND e.status = ?';
+    params.push(status.trim());
+  }
+
+  // 5. Filter by joining date (created_at range)
+  if (startDate && startDate.trim() !== '') {
+    const start = new Date(startDate.trim());
+    if (!isNaN(start.getTime())) {
+      start.setHours(0, 0, 0, 0);
+      whereClause += ' AND e.created_at >= ?';
+      params.push(start);
+    }
+  }
+
+  if (endDate && endDate.trim() !== '') {
+    const end = new Date(endDate.trim());
+    if (!isNaN(end.getTime())) {
+      end.setHours(23, 59, 59, 999);
+      whereClause += ' AND e.created_at <= ?';
+      params.push(end);
+    }
+  }
+
+  // RBAC: Non-admin employees can only view their own record
+  if (user && user.role === 'employee') {
+    if (!user.employee_id) {
+      whereClause += ' AND 1=0';
+    } else {
+      whereClause += ' AND e.id = ?';
+      params.push(user.employee_id);
+    }
+  }
+
+  return { whereClause, params };
+}
+
+/**
+ * Returns safe SQL ORDER BY clause.
+ * Prioritizes exact ID matches to the very top when an ID search query is present.
+ */
+function getEmployeeSortClause(sortBy = 'id', sortOrder = 'DESC', search = '') {
+  const sortCol = EMPLOYEE_SORT_COLUMNS[sortBy] || 'e.id';
+  const sortDir = String(sortOrder).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+
+  if (search && search.trim() !== '') {
+    const rawSearch = search.trim();
+    const normalizedIdStr = rawSearch
+      .replace(/^id[:=\s]*/i, '')
+      .replace(/^#\s*/, '')
+      .replace(/^emp-?\s*/i, '')
+      .trim();
+    const parsedId = parseInt(normalizedIdStr, 10);
+    if (!isNaN(parsedId) && parsedId > 0 && /^\d+$/.test(normalizedIdStr)) {
+      return ` ORDER BY (e.id = ${parsedId}) DESC, ${sortCol} ${sortDir}`;
+    }
+  }
+
+  return ` ORDER BY ${sortCol} ${sortDir}`;
+}
+
+// --- GET /api/employees/designations - List all distinct active designations ---
+router.get('/designations', async (req, res) => {
+  try {
+    const [rows] = await pool.query(`
+      SELECT DISTINCT designation 
+      FROM employees 
+      WHERE deleted_at IS NULL 
+        AND designation IS NOT NULL 
+        AND TRIM(designation) != ''
+      ORDER BY designation ASC
+    `);
+    const designations = rows.map((r) => r.designation);
+    res.json(designations);
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch designations.', error: error.message });
+  }
+});
+
 router.get('/', async (req, res) => {
   try {
-    const { search, department_id, status } = req.query;
+    const {
+      sortBy = 'id',
+      sortOrder = 'DESC',
+      page,
+      limit
+    } = req.query;
 
-    let query = `
+    const isPaginated = page !== undefined || limit !== undefined;
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 10));
+    const offset = (pageNum - 1) * limitNum;
+
+    const { whereClause, params } = buildEmployeeFilterQuery(req.query, req.user);
+    const sortClause = getEmployeeSortClause(sortBy, sortOrder, req.query.search);
+
+    // 1. Total matching count
+    const [countResult] = await pool.query(
+      `SELECT COUNT(*) AS total
+       FROM employees e
+       LEFT JOIN departments d ON e.department_id = d.id
+       ${whereClause}`,
+      params
+    );
+    const total = countResult[0]?.total || 0;
+    const totalPages = Math.max(1, Math.ceil(total / limitNum));
+
+    // 2. Fetch records
+    let dataQuery = `
       SELECT 
         e.id, 
         e.name, 
@@ -137,39 +323,29 @@ router.get('/', async (req, res) => {
         e.updated_at
       FROM employees e
       LEFT JOIN departments d ON e.department_id = d.id
-      WHERE 1=1
-        AND e.deleted_at IS NULL
+      ${whereClause}
+      ${sortClause}
     `;
-    const params = [];
 
-    if (search && search.trim() !== '') {
-      query += ' AND (e.name LIKE ? OR e.email LIKE ?)';
-      params.push(`%${search.trim()}%`, `%${search.trim()}%`);
+    if (isPaginated) {
+      dataQuery += ' LIMIT ? OFFSET ?';
+      const [employees] = await pool.query(dataQuery, [...params, limitNum, offset]);
+      return res.json({
+        employees,
+        pagination: {
+          total,
+          page: pageNum,
+          limit: limitNum,
+          totalPages,
+          hasNextPage: pageNum < totalPages,
+          hasPrevPage: pageNum > 1
+        }
+      });
+    } else {
+      const [employees] = await pool.query(dataQuery, params);
+      res.setHeader('X-Total-Count', total);
+      return res.json(employees);
     }
-
-    if (department_id && department_id !== 'all') {
-      query += ' AND e.department_id = ?';
-      params.push(department_id);
-    }
-
-    if (status && status !== 'all') {
-      query += ' AND e.status = ?';
-      params.push(status);
-    }
-
-    // RBAC: Non-admin employees can only view their own record
-    if (req.user.role === 'employee') {
-      if (!req.user.employee_id) {
-        return res.json([]);
-      }
-      query += ' AND e.id = ?';
-      params.push(req.user.employee_id);
-    }
-
-    query += ' ORDER BY e.id DESC';
-
-    const [employees] = await pool.query(query, params);
-    res.json(employees);
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch employees.', error: error.message });
   }
@@ -189,7 +365,7 @@ router.get('/deleted', requireAdmin, async (req, res) => {
         e.department_id, 
         d.name AS department_name, 
         e.designation, 
-        e.avatar_url,
+        e.avatar_url, 
         e.status, 
         e.created_at, 
         e.updated_at,
@@ -201,8 +377,9 @@ router.get('/deleted', requireAdmin, async (req, res) => {
     const params = [];
 
     if (search && search.trim() !== '') {
-      query += ' AND (e.name LIKE ? OR e.email LIKE ?)';
-      params.push(`%${search.trim()}%`, `%${search.trim()}%`);
+      query += ' AND (e.name LIKE ? OR e.email LIKE ? OR e.phone LIKE ? OR CAST(e.id AS CHAR) LIKE ?)';
+      const s = `%${search.trim()}%`;
+      params.push(s, s, s, s);
     }
 
     if (department_id && department_id !== 'all') {
@@ -220,11 +397,12 @@ router.get('/deleted', requireAdmin, async (req, res) => {
 });
 
 // --- Export CSV ---
-router.get('/export/csv', requireAdmin, async (req, res) => {
+router.get('/export/csv', requirePermission('employee.export'), async (req, res) => {
   try {
-    const { search, department_id, status } = req.query;
+    const { whereClause, params } = buildEmployeeFilterQuery(req.query, req.user);
+    const sortClause = getEmployeeSortClause(req.query.sortBy, req.query.sortOrder, req.query.search);
 
-    let query = `
+    const query = `
       SELECT 
         e.id, 
         e.name, 
@@ -236,27 +414,9 @@ router.get('/export/csv', requireAdmin, async (req, res) => {
         e.created_at
       FROM employees e
       LEFT JOIN departments d ON e.department_id = d.id
-      WHERE 1=1
-        AND e.deleted_at IS NULL
+      ${whereClause}
+      ${sortClause}
     `;
-    const params = [];
-
-    if (search && search.trim() !== '') {
-      query += ' AND (e.name LIKE ? OR e.email LIKE ?)';
-      params.push(`%${search.trim()}%`, `%${search.trim()}%`);
-    }
-
-    if (department_id && department_id !== 'all') {
-      query += ' AND e.department_id = ?';
-      params.push(department_id);
-    }
-
-    if (status && status !== 'all') {
-      query += ' AND e.status = ?';
-      params.push(status);
-    }
-
-    query += ' ORDER BY e.id DESC';
 
     const [employees] = await pool.query(query, params);
 
@@ -284,11 +444,12 @@ router.get('/export/csv', requireAdmin, async (req, res) => {
 });
 
 // --- Export Excel ---
-router.get('/export/excel', requireAdmin, async (req, res) => {
+router.get('/export/excel', requirePermission('employee.export'), async (req, res) => {
   try {
-    const { search, department_id, status } = req.query;
+    const { whereClause, params } = buildEmployeeFilterQuery(req.query, req.user);
+    const sortClause = getEmployeeSortClause(req.query.sortBy, req.query.sortOrder, req.query.search);
 
-    let query = `
+    const query = `
       SELECT 
         e.id, 
         e.name, 
@@ -300,27 +461,9 @@ router.get('/export/excel', requireAdmin, async (req, res) => {
         e.created_at
       FROM employees e
       LEFT JOIN departments d ON e.department_id = d.id
-      WHERE 1=1
-        AND e.deleted_at IS NULL
+      ${whereClause}
+      ${sortClause}
     `;
-    const params = [];
-
-    if (search && search.trim() !== '') {
-      query += ' AND (e.name LIKE ? OR e.email LIKE ?)';
-      params.push(`%${search.trim()}%`, `%${search.trim()}%`);
-    }
-
-    if (department_id && department_id !== 'all') {
-      query += ' AND e.department_id = ?';
-      params.push(department_id);
-    }
-
-    if (status && status !== 'all') {
-      query += ' AND e.status = ?';
-      params.push(status);
-    }
-
-    query += ' ORDER BY e.id DESC';
 
     const [employees] = await pool.query(query, params);
 
@@ -414,7 +557,7 @@ router.get('/export/excel', requireAdmin, async (req, res) => {
 });
 
 // --- Import Template Download ---
-router.get('/import/template', requireAdmin, async (req, res) => {
+router.get('/import/template', requirePermission('employee.create'), async (req, res) => {
   try {
     const [departments] = await pool.query('SELECT name FROM departments ORDER BY id ASC');
 
@@ -435,7 +578,7 @@ router.get('/import/template', requireAdmin, async (req, res) => {
 });
 
 // --- Validate Uploaded CSV ---
-router.post('/import/validate', requireAdmin, upload.single('file'), async (req, res) => {
+router.post('/import/validate', requirePermission('employee.create'), upload.single('file'), async (req, res) => {
   try {
     let csvText = '';
     if (req.file && req.file.buffer) {
@@ -615,7 +758,7 @@ router.post('/import/validate', requireAdmin, upload.single('file'), async (req,
 });
 
 // --- Execute Import of Valid Records ---
-router.post('/import/execute', requireAdmin, async (req, res) => {
+router.post('/import/execute', requirePermission('employee.create'), async (req, res) => {
   let conn;
   try {
     const { records } = req.body;
@@ -681,8 +824,15 @@ router.get('/:id', async (req, res) => {
   try {
     const { id } = req.params;
 
-    // RBAC: Non-admin employees can only view their own profile
-    if (req.user.role !== 'admin' && req.user.employee_id !== parseInt(id, 10)) {
+    // RBAC: Verify access permissions (Admins & HR managers have global view, Dept managers within dept, Employees self only)
+    const hasAccess = await verifyDepartmentAccess(req, id);
+    if (!hasAccess) {
+      if (req.user.role === 'department_manager') {
+        return res.status(403).json({
+          message: 'Access denied: Department managers can only access employees in their own department.',
+          userRole: req.user.role
+        });
+      }
       return res.status(403).json({
         message: 'Access denied. You are only authorized to view your own profile.',
         userRole: req.user.role
@@ -1052,7 +1202,7 @@ router.delete('/:id/documents/:docId', async (req, res) => {
   }
 });
 
-router.post('/', requireAdmin, async (req, res) => {
+router.post('/', requirePermission('employee.create'), async (req, res) => {
   try {
     const { name, email, phone, department_id, designation, status } = req.body;
 
@@ -1122,10 +1272,25 @@ router.post('/', requireAdmin, async (req, res) => {
   }
 });
 
-router.put('/:id', requireAdmin, async (req, res) => {
+router.put('/:id', requirePermission('employee.update'), async (req, res) => {
   try {
     const { id } = req.params;
     const { name, email, phone, department_id, designation, status } = req.body;
+
+    const hasAccess = await verifyDepartmentAccess(req, id);
+    if (!hasAccess) {
+      return res.status(403).json({
+        message: 'Access denied: Department managers can only modify employees in their own department.',
+        userRole: req.user.role
+      });
+    }
+
+    if (req.user.role === 'department_manager' && department_id && parseInt(department_id, 10) !== req.user.department_id) {
+      return res.status(403).json({
+        message: 'Access denied: Department managers cannot transfer employees out of their department.',
+        userRole: req.user.role
+      });
+    }
 
     if (!name || !email || !phone || !department_id || !designation) {
       return res.status(400).json({ message: 'All fields are required.' });
@@ -1278,7 +1443,7 @@ router.patch('/:id/restore', requireAdmin, async (req, res) => {
 });
 
 // --- DELETE /api/employees/:id - Soft-delete an employee (Admin only) ---
-router.delete('/:id', requireAdmin, async (req, res) => {
+router.delete('/:id', requirePermission('employee.delete'), async (req, res) => {
   try {
     const { id } = req.params;
 
