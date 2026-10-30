@@ -65,8 +65,7 @@
 .attendance-punch-card {
   padding: var(--space-5) var(--space-6);
   margin-bottom: var(--space-6);
-  border-left: 4px solid var(--primary);
-  background: linear-gradient(to right, #fcfdff, var(--bg-surface));
+  background: var(--bg-surface);
 }
 
 .punch-status-wrap {

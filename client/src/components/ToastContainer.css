@@ -106,19 +106,19 @@
 
 /* Status-specific border accents */
 .toast-item.toast-success {
-  border-left: 4px solid #10b981;
+  border-color: #a7f3d0;
 }
 
 .toast-item.toast-error {
-  border-left: 4px solid #ef4444;
+  border-color: #fecaca;
 }
 
 .toast-item.toast-warning {
-  border-left: 4px solid #f59e0b;
+  border-color: #fde68a;
 }
 
 .toast-item.toast-info {
-  border-left: 4px solid var(--primary);
+  border-color: #cbd5e1;
 }
 
 /* Progress Bar Track */

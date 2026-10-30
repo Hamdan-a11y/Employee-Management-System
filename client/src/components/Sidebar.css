@@ -244,17 +244,6 @@
   font-weight: 600;
 }
 
-.sidebar-nav-link.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 6px;
-  bottom: 6px;
-  width: 3px;
-  background-color: var(--primary);
-  border-radius: 0 4px 4px 0;
-}
-
 .sidebar-nav-icon {
   flex-shrink: 0;
   color: inherit;

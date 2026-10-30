@@ -356,7 +356,7 @@
   background: #fef2f2;
   padding: 0.25rem 0.5rem;
   border-radius: var(--radius-sm, 0.375rem);
-  border-left: 2px solid #ef4444;
+  border: 1px solid #fecaca;
 }
 
 /* Badges for Leave Types */

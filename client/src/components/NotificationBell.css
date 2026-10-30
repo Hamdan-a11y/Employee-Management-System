@@ -256,17 +256,6 @@
   background-color: #f1f5f9;
 }
 
-.notif-item.unread::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 14px;
-  bottom: 14px;
-  width: 3px;
-  background-color: var(--primary);
-  border-radius: 0 2px 2px 0;
-}
-
 /* Category Icons */
 .notif-item-icon-col {
   flex-shrink: 0;
