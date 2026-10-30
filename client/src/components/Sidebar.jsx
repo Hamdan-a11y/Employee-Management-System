@@ -146,11 +146,11 @@ const Sidebar = () => {
     <>
       {/* Mobile Top Header */}
       <header className="sidebar-mobile-header">
-        <NavLink to="/dashboard" className="sidebar-mobile-brand">
-          <div className="sidebar-brand-icon-sm">
-            <Briefcase size={16} />
+        <NavLink to="/dashboard" className="sidebar-mobile-brand" title="Employee Management System">
+          <div className="sidebar-brand-mark" aria-hidden="true">
+            <Briefcase size={15} strokeWidth={2} />
           </div>
-          <span className="sidebar-mobile-brand-title">Employee Management System</span>
+          <span className="sidebar-mobile-brand-title">EMS Workspace</span>
         </NavLink>
 
         <div className="sidebar-mobile-right">
@@ -162,7 +162,7 @@ const Sidebar = () => {
             aria-label={isMobileOpen ? 'Close navigation menu' : 'Open navigation menu'}
             aria-expanded={isMobileOpen}
           >
-            {isMobileOpen ? <X size={20} /> : <Menu size={20} />}
+            {isMobileOpen ? <X size={18} /> : <Menu size={18} />}
           </button>
         </div>
       </header>
@@ -183,13 +183,13 @@ const Sidebar = () => {
       >
         {/* Brand Header */}
         <div className="sidebar-brand-header">
-          <NavLink to="/dashboard" className="sidebar-brand-link">
-            <div className="sidebar-brand-icon">
-              <Briefcase size={18} />
+          <NavLink to="/dashboard" className="sidebar-brand-link" title="Employee Management System">
+            <div className="sidebar-brand-mark" aria-hidden="true">
+              <Briefcase size={15} strokeWidth={2} />
             </div>
-            <div className="sidebar-brand-info">
-              <span className="sidebar-brand-title">EMS</span>
-              <span className="sidebar-brand-subtitle">Employee Management System</span>
+            <div className="sidebar-brand-copy">
+              <span className="sidebar-brand-name">EMS</span>
+              <span className="sidebar-brand-desc">Workspace</span>
             </div>
           </NavLink>
 
@@ -201,7 +201,7 @@ const Sidebar = () => {
               className="sidebar-drawer-close"
               aria-label="Close navigation"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
           </div>
         </div>
