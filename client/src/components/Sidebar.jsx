@@ -148,7 +148,21 @@ const Sidebar = () => {
       <header className="sidebar-mobile-header">
         <NavLink to="/dashboard" className="sidebar-mobile-brand" title="Employee Management System">
           <div className="sidebar-brand-mark" aria-hidden="true">
-            <Briefcase size={15} strokeWidth={2} />
+            <svg 
+              width="18" 
+              height="18" 
+              viewBox="0 0 24 24" 
+              fill="none" 
+              stroke="currentColor" 
+              strokeWidth="2" 
+              strokeLinecap="round" 
+              strokeLinejoin="round"
+            >
+              <rect x="2.5" y="6.5" width="19" height="14" rx="2.5" />
+              <path d="M8 6.5V4C8 3.45 8.45 3 9 3H15C15.55 3 16 3.45 16 4V6.5" />
+              <path d="M2.5 11.5C6.5 13.5 17.5 13.5 21.5 11.5" />
+              <circle cx="12" cy="13.2" r="1" fill="currentColor" stroke="none" />
+            </svg>
           </div>
           <span className="sidebar-mobile-brand-title">EMS Workspace</span>
         </NavLink>
@@ -185,7 +199,21 @@ const Sidebar = () => {
         <div className="sidebar-brand-header">
           <NavLink to="/dashboard" className="sidebar-brand-link" title="Employee Management System">
             <div className="sidebar-brand-mark" aria-hidden="true">
-              <Briefcase size={15} strokeWidth={2} />
+              <svg 
+                width="18" 
+                height="18" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="currentColor" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              >
+                <rect x="2.5" y="6.5" width="19" height="14" rx="2.5" />
+                <path d="M8 6.5V4C8 3.45 8.45 3 9 3H15C15.55 3 16 3.45 16 4V6.5" />
+                <path d="M2.5 11.5C6.5 13.5 17.5 13.5 21.5 11.5" />
+                <circle cx="12" cy="13.2" r="1" fill="currentColor" stroke="none" />
+              </svg>
             </div>
             <div className="sidebar-brand-copy">
               <span className="sidebar-brand-name">EMS</span>
@@ -233,21 +261,34 @@ const Sidebar = () => {
         {/* User Profile & Sign Out Footer */}
         <div className="sidebar-footer">
           <div className="sidebar-user-card">
-            <div className="sidebar-avatar">
-              {user?.name ? user.name.charAt(0).toUpperCase() : 'U'}
+            <div className="sidebar-avatar" aria-hidden="true">
+              {user?.avatar_url ? (
+                <img src={user.avatar_url} alt="" className="sidebar-avatar-img" />
+              ) : (
+                <svg 
+                  width="18" 
+                  height="18" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  strokeWidth="2" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round"
+                >
+                  <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+                  <circle cx="12" cy="7" r="4" />
+                </svg>
+              )}
             </div>
             <div className="sidebar-user-details">
-              <div className="sidebar-user-name-row">
-                <span className="sidebar-user-name" title={user?.name || 'User'}>
-                  {user?.name || 'User'}
-                </span>
-                <span className={`sidebar-role-badge ${roleBadge.className}`}>
-                  {roleBadge.label}
-                </span>
+              <div className="sidebar-user-name" title={user?.name || 'User'}>
+                {user?.name || 'User'}
               </div>
               <span className="sidebar-user-email" title={user?.email || ''}>
                 {user?.email || ''}
               </span>
+              {/* Accessible role tag for screen readers & tests */}
+              <span className="sr-only">{roleBadge.label}</span>
             </div>
           </div>
 
@@ -257,7 +298,7 @@ const Sidebar = () => {
             className="sidebar-logout-btn"
             title="Sign out of your account"
           >
-            <LogOut size={15} />
+            <LogOut size={14} strokeWidth={2} />
             <span>Sign Out</span>
           </button>
         </div>
