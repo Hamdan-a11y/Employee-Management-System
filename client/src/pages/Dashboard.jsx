@@ -12,8 +12,7 @@ import {
   Briefcase,
   AlertCircle,
   Calendar,
-  TrendingUp,
-  PieChart
+  TrendingUp
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import './Dashboard.css';
@@ -259,10 +258,6 @@ const Dashboard = () => {
                       Distribution of employee engagement status
                     </p>
                   </div>
-                  <span className="badge badge-inactive">
-                    <PieChart size={13} />
-                    <span>Breakdown</span>
-                  </span>
                 </div>
 
                 <div className="status-donut-container">
@@ -274,8 +269,8 @@ const Dashboard = () => {
                         cy="80"
                         r={radius}
                         fill="none"
-                        stroke="var(--bg-subtle)"
-                        strokeWidth="15"
+                        stroke="#f1f5f9"
+                        strokeWidth="13"
                       />
 
                       {totalEmployees > 0 ? (
@@ -286,8 +281,8 @@ const Dashboard = () => {
                             cy="80"
                             r={radius}
                             fill="none"
-                            stroke="#10b981"
-                            strokeWidth="15"
+                            stroke="#09090b"
+                            strokeWidth="13"
                             strokeDasharray={`${activeDash} ${circumference}`}
                             strokeDashoffset="0"
                             transform="rotate(-90 80 80)"
@@ -299,8 +294,8 @@ const Dashboard = () => {
                             cy="80"
                             r={radius}
                             fill="none"
-                            stroke="#94a3b8"
-                            strokeWidth="15"
+                            stroke="#cbd5e1"
+                            strokeWidth="13"
                             strokeDasharray={`${inactiveDash} ${circumference}`}
                             strokeDashoffset={-activeDash}
                             transform="rotate(-90 80 80)"

@@ -288,9 +288,9 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: var(--space-8);
+  gap: 32px;
   min-height: 190px;
-  padding: var(--space-3) 0;
+  padding: 12px 8px;
   flex-wrap: wrap;
 }
 
@@ -298,6 +298,9 @@
   width: 140px;
   height: 140px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .donut-svg {
@@ -312,58 +315,84 @@
   cursor: pointer;
 }
 
-.donut-segment:hover {
-  stroke-width: 18px;
-  opacity: 0.9;
+.active-segment {
+  stroke: #09090b;
+}
+
+.active-segment:hover {
+  stroke: #18181b;
+  stroke-width: 15px;
+}
+
+.inactive-segment {
+  stroke: #cbd5e1;
+}
+
+.inactive-segment:hover {
+  stroke: #94a3b8;
+  stroke-width: 15px;
 }
 
 .donut-center-num {
   font-size: 26px;
   font-weight: 700;
-  fill: var(--text-primary);
+  fill: #09090b;
   font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
 }
 
 .donut-center-text {
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 600;
-  fill: var(--text-muted);
+  fill: #64748b;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   font-family: inherit;
 }
 
 .donut-legend-list {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  min-width: 170px;
+  gap: 10px;
+  min-width: 220px;
+  max-width: 280px;
+  flex: 1;
 }
 
 .donut-legend-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
-  border-radius: var(--radius-md);
-  background-color: var(--bg-page);
-  border: 1px solid var(--border-color);
+  gap: 14px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background-color: #f8fafc;
+  border: 1px solid #e2e8f0;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.donut-legend-item:hover {
+  background-color: #f1f5f9;
+  border-color: #cbd5e1;
 }
 
 .donut-legend-head {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 .legend-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 9999px;
+  width: 7.5px;
+  height: 7.5px;
+  border-radius: 50%;
+  flex-shrink: 0;
 }
 
 .active-dot {
-  background-color: #10b981;
+  background-color: #09090b;
 }
 
 .inactive-dot {
@@ -372,25 +401,29 @@
 
 .legend-name {
   font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--text-primary);
+  font-weight: 500;
+  color: #0f172a;
+  white-space: nowrap;
 }
 
 .legend-metrics {
   display: flex;
-  align-items: center;
-  gap: 4px;
+  align-items: baseline;
+  gap: 5px;
+  font-variant-numeric: tabular-nums;
+  margin-left: auto;
 }
 
 .legend-count {
-  font-size: 0.8125rem;
+  font-size: 0.875rem;
   font-weight: 700;
-  color: var(--text-primary);
+  color: #09090b;
 }
 
 .legend-pct {
   font-size: 0.75rem;
-  color: var(--text-muted);
+  font-weight: 500;
+  color: #64748b;
 }
 
 /* ==========================================================================
