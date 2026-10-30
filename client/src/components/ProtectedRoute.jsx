@@ -3,8 +3,8 @@ import { Navigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import './ProtectedRoute.css';
 
-const ProtectedRoute = ({ children, allowedRoles }) => {
-  const { user, isAuthenticated, loading } = useAuth();
+const ProtectedRoute = ({ children, allowedRoles, requiredPermission }) => {
+  const { user, isAuthenticated, loading, can } = useAuth();
 
   if (loading) {
     return (
@@ -16,6 +16,10 @@ const ProtectedRoute = ({ children, allowedRoles }) => {
 
   if (!isAuthenticated) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (requiredPermission && !can(requiredPermission)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (allowedRoles && allowedRoles.length > 0) {
