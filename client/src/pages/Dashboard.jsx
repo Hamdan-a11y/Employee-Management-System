@@ -281,7 +281,7 @@ const Dashboard = () => {
                             cy="80"
                             r={radius}
                             fill="none"
-                            stroke="#09090b"
+                            stroke="#10b981"
                             strokeWidth="13"
                             strokeDasharray={`${activeDash} ${circumference}`}
                             strokeDashoffset="0"
