@@ -316,11 +316,11 @@
 }
 
 .active-segment {
-  stroke: #10b981;
+  stroke: url(#activeDonutGrad);
 }
 
 .active-segment:hover {
-  stroke: #059669;
+  stroke: #047857;
   stroke-width: 15px;
 }
 
@@ -392,7 +392,7 @@
 }
 
 .active-dot {
-  background-color: #10b981;
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
 }
 
 .inactive-dot {

@@ -263,6 +263,13 @@ const Dashboard = () => {
                 <div className="status-donut-container">
                   <div className="donut-chart-box">
                     <svg viewBox="0 0 160 160" className="donut-svg">
+                      <defs>
+                        <linearGradient id="activeDonutGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                          <stop offset="0%" stopColor="#059669" />
+                          <stop offset="100%" stopColor="#047857" />
+                        </linearGradient>
+                      </defs>
+
                       {/* Track background circle */}
                       <circle
                         cx="80"
@@ -281,7 +288,7 @@ const Dashboard = () => {
                             cy="80"
                             r={radius}
                             fill="none"
-                            stroke="#10b981"
+                            stroke="url(#activeDonutGrad)"
                             strokeWidth="13"
                             strokeDasharray={`${activeDash} ${circumference}`}
                             strokeDashoffset="0"
