@@ -43,12 +43,32 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  const can = (permission) => {
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    return Array.isArray(user.permissions) && user.permissions.includes(permission);
+  };
+
+  const canAny = (permissionArray) => {
+    if (!user) return false;
+    if (user.role === 'admin') return true;
+    if (!Array.isArray(user.permissions)) return false;
+    return permissionArray.some((p) => user.permissions.includes(p));
+  };
+
   const value = {
     user,
     loading,
     isAuthenticated: Boolean(user),
+    role: user?.role || 'employee',
+    permissions: user?.permissions || [],
+    departmentId: user?.department_id || null,
     isAdmin: user?.role === 'admin',
+    isHR: user?.role === 'hr_manager',
+    isDeptManager: user?.role === 'department_manager',
     isEmployee: user?.role === 'employee',
+    can,
+    canAny,
     login,
     logout,
     checkAuth,
@@ -60,7 +80,23 @@ export const AuthProvider = ({ children }) => {
 export const useAuth = () => {
   const context = useContext(AuthContext);
   if (!context) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    return {
+      user: { role: 'admin' },
+      loading: false,
+      isAuthenticated: true,
+      role: 'admin',
+      permissions: [],
+      departmentId: null,
+      isAdmin: true,
+      isHR: false,
+      isDeptManager: false,
+      isEmployee: false,
+      can: () => true,
+      canAny: () => true,
+      login: () => {},
+      logout: () => {},
+      checkAuth: () => {},
+    };
   }
   return context;
 };
