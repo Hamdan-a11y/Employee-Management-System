@@ -15,11 +15,12 @@ router.get('/', async (req, res) => {
       SELECT 
         d.id, 
         d.name, 
+        d.approved_headcount,
         d.created_at,
         COUNT(e.id) AS employee_count
       FROM departments d
       LEFT JOIN employees e ON d.id = e.department_id AND e.deleted_at IS NULL
-      GROUP BY d.id, d.name, d.created_at
+      GROUP BY d.id, d.name, d.approved_headcount, d.created_at
       ORDER BY d.name ASC
     `);
     res.json(departments);
@@ -36,12 +37,13 @@ router.get('/:id', async (req, res) => {
       `SELECT 
         d.id, 
         d.name, 
+        d.approved_headcount,
         d.created_at,
         COUNT(e.id) AS employee_count
       FROM departments d
       LEFT JOIN employees e ON d.id = e.department_id AND e.deleted_at IS NULL
       WHERE d.id = ?
-      GROUP BY d.id, d.name, d.created_at`,
+      GROUP BY d.id, d.name, d.approved_headcount, d.created_at`,
       [id]
     );
 
@@ -150,6 +152,73 @@ router.put('/:id', requirePermission('department.manage'), async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Failed to update department.', error: error.message });
+  }
+});
+
+// PUT /:id/approved-headcount - Update department approved headcount
+// Access: Admin and HR Manager only. Department Manager: no edit (403). Employee: no access (403).
+router.put('/:id/approved-headcount', async (req, res) => {
+  try {
+    const user = req.user;
+
+    // Enforce role access: Admin and HR Manager only
+    if (user.role !== 'admin' && user.role !== 'hr_manager') {
+      return res.status(403).json({
+        message: 'Access denied. Only Admins and HR Managers can update approved headcount.',
+        userRole: user.role,
+      });
+    }
+
+    const { id } = req.params;
+    const deptId = parseInt(id, 10);
+    if (isNaN(deptId)) {
+      return res.status(400).json({ message: 'Invalid department ID.' });
+    }
+
+    // Support both approved_headcount and approved in request body
+    const rawValue = req.body.approved_headcount !== undefined ? req.body.approved_headcount : req.body.approved;
+
+    if (rawValue === undefined || rawValue === null || rawValue === '') {
+      return res.status(400).json({ message: 'Approved headcount is required.' });
+    }
+
+    // Parse and validate integer >= 0
+    const parsed = typeof rawValue === 'string' && rawValue.trim() !== '' ? Number(rawValue.trim()) : Number(rawValue);
+
+    if (isNaN(parsed) || !Number.isInteger(parsed) || parsed < 0) {
+      return res.status(400).json({
+        message: 'Approved headcount must be an integer greater than or equal to 0.',
+      });
+    }
+
+    // Check if department exists
+    const [existing] = await pool.query('SELECT id, name, approved_headcount FROM departments WHERE id = ?', [deptId]);
+    if (existing.length === 0) {
+      return res.status(404).json({ message: 'Department not found.' });
+    }
+
+    await pool.query('UPDATE departments SET approved_headcount = ? WHERE id = ?', [parsed, deptId]);
+
+    await notifyAdmins({
+      type: 'system',
+      title: 'Approved Headcount Updated',
+      message: `Approved headcount for department "${existing[0].name}" updated to ${parsed}.`,
+      link: '/headcount',
+    }).catch((err) => console.error('[Notify error]:', err.message));
+
+    res.json({
+      message: 'Approved headcount updated successfully!',
+      department: {
+        id: deptId,
+        name: existing[0].name,
+        approved_headcount: parsed,
+      },
+    });
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to update approved headcount.',
+      error: error.message,
+    });
   }
 });
 

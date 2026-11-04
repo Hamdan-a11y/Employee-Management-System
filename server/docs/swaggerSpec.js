@@ -691,6 +691,61 @@ X-CSRF-Token: <csrf_token> (for state-changing requests like POST, PUT, PATCH, D
         }
       }
     },
+    '/departments/{id}/approved-headcount': {
+      put: {
+        tags: ['Departments', 'Workforce'],
+        summary: 'Update department approved headcount (Admin & HR Manager only)',
+        parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': {
+              schema: {
+                type: 'object',
+                required: ['approved_headcount'],
+                properties: { approved_headcount: { type: 'integer', minimum: 0, example: 12 } }
+              }
+            }
+          }
+        },
+        responses: {
+          200: { description: 'Approved headcount updated successfully' },
+          400: { description: 'Invalid headcount (must be integer >= 0)' },
+          403: { description: 'Forbidden - Requires Admin or HR Manager' },
+          404: { description: 'Department not found' }
+        }
+      }
+    },
+    '/workforce/headcount': {
+      get: {
+        tags: ['Workforce'],
+        summary: 'Get Headcount vs. Approved Headcount per department (Admin, HR, Dept Manager)',
+        responses: {
+          200: {
+            description: 'List of department headcount metrics',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'integer', example: 1 },
+                      name: { type: 'string', example: 'Engineering' },
+                      approved: { type: 'integer', example: 15 },
+                      current: { type: 'integer', example: 12 },
+                      gap: { type: 'integer', example: 3 },
+                      status: { type: 'string', enum: ['Needs Hiring', 'Balanced', 'Overstaffed - Review', 'Not Set'], example: 'Needs Hiring' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          403: { description: 'Forbidden - Employees have no access' }
+        }
+      }
+    },
     '/dashboard/stats': {
       get: {
         tags: ['Dashboard'],

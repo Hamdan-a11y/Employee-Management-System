@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 CREATE TABLE IF NOT EXISTS departments (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(100) NOT NULL UNIQUE,
+  approved_headcount INT NOT NULL DEFAULT 0 CHECK (approved_headcount >= 0),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 

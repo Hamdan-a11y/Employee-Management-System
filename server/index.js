@@ -19,6 +19,7 @@ const auditLogRoutes = require('./routes/auditLogs');
 const notificationRoutes = require('./routes/notifications');
 const attendanceRoutes = require('./routes/attendance');
 const leaveRoutes = require('./routes/leaves');
+const workforceRoutes = require('./routes/workforce');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./docs/swaggerSpec');
 
@@ -127,6 +128,7 @@ app.use('/api/audit-logs', auditLogRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/leaves', leaveRoutes);
+app.use('/api/workforce', workforceRoutes);
 
 // Health check route
 app.get('/api/health', async (req, res) => {
