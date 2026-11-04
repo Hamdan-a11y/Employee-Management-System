@@ -14,6 +14,7 @@ import {
   Calendar,
   TrendingUp
 } from 'lucide-react';
+import { DepartmentIcon, getDepartmentConfig } from '../utils/departmentIcons';
 import { useAuth } from '../context/AuthContext';
 import './Dashboard.css';
 
@@ -194,7 +195,7 @@ const Dashboard = () => {
                       New team members joined over the last 6 months
                     </p>
                   </div>
-                  <span className="badge badge-inactive dashboard-hiring-badge">
+                  <span className="dashboard-hiring-badge">
                     <TrendingUp size={13} />
                     <span>{totalRecentHires} {totalRecentHires === 1 ? 'hire' : 'hires'} (6 mos)</span>
                   </span>
@@ -374,12 +375,13 @@ const Dashboard = () => {
                     const deptSharePct = totalEmployees > 0 
                       ? Math.round((deptCount / totalEmployees) * 100) 
                       : 0;
+                    const deptConfig = getDepartmentConfig(dept.name);
 
                     return (
                       <div key={dept.id} className="dashboard-dept-chart-item">
                         <div className="dashboard-dept-header">
                           <div className="dashboard-dept-info">
-                            <Briefcase size={16} color="var(--text-secondary)" />
+                            <DepartmentIcon name={dept.name} size={15} badgeSize={28} />
                             <span className="dashboard-dept-name">
                               {dept.name}
                             </span>
@@ -398,7 +400,10 @@ const Dashboard = () => {
                         <div className="dashboard-dept-bar-track">
                           <div 
                             className="dashboard-dept-bar-fill" 
-                            style={{ width: `${deptSharePct}%` }}
+                            style={{ 
+                              width: `${deptSharePct}%`,
+                              background: deptSharePct > 0 ? deptConfig.barColor : undefined
+                            }}
                             title={`${dept.name}: ${deptCount} employees (${deptSharePct}% of total)`}
                           />
                         </div>

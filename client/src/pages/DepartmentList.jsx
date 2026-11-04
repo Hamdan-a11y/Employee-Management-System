@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   ArrowRight
 } from 'lucide-react';
+import { DepartmentIcon } from '../utils/departmentIcons';
 import { useNotification } from '../context/NotificationContext';
 import './DepartmentList.css';
 
@@ -279,9 +280,7 @@ const DepartmentList = () => {
                       <tr key={dept.id} className="dept-tr">
                         <td className="dept-td">
                           <div className="dept-name-cell">
-                            <div className="dept-icon-wrapper">
-                              <Building2 size={18} />
-                            </div>
+                            <DepartmentIcon name={dept.name} size={18} badgeSize={34} />
                             <div>
                               <div className="dept-name-title">{dept.name}</div>
                               <div className="dept-name-id">ID #{dept.id}</div>
