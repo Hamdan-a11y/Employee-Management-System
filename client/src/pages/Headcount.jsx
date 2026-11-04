@@ -15,6 +15,8 @@ import {
   AlertCircle,
   TrendingUp,
   UserPlus,
+  UserMinus,
+  UserCheck,
   CheckCircle2,
   AlertTriangle,
   HelpCircle,
@@ -178,27 +180,27 @@ const Headcount = () => {
     };
   }, [departments]);
 
-  // Render colored status text (Clean Dot + Text, No Container Box)
+  // Render colored status text with head/body icon (No Container Box)
   const renderStatusBadge = (status) => {
     switch (status) {
       case 'Needs Hiring':
         return (
           <span className="headcount-status-text status-needs-hiring badge-needs-hiring" data-testid="status-badge-needs-hiring">
-            <span className="headcount-status-dot" />
+            <UserPlus size={14} className="headcount-status-icon" />
             <span>Needs Hiring</span>
           </span>
         );
       case 'Balanced':
         return (
           <span className="headcount-status-text status-balanced badge-balanced" data-testid="status-badge-balanced">
-            <span className="headcount-status-dot" />
+            <UserCheck size={14} className="headcount-status-icon" />
             <span>Balanced</span>
           </span>
         );
       case 'Overstaffed - Review':
         return (
           <span className="headcount-status-text status-overstaffed badge-overstaffed" data-testid="status-badge-overstaffed">
-            <span className="headcount-status-dot" />
+            <UserMinus size={14} className="headcount-status-icon" />
             <span>Overstaffed - Review</span>
           </span>
         );
@@ -206,7 +208,7 @@ const Headcount = () => {
       default:
         return (
           <span className="headcount-status-text status-not-set badge-not-set" data-testid="status-badge-not-set">
-            <span className="headcount-status-dot" />
+            <HelpCircle size={14} className="headcount-status-icon" />
             <span>Not Set</span>
           </span>
         );

@@ -476,12 +476,12 @@
   font-weight: 500;
 }
 
-/* Status: Pure text with indicator dot (No pill/container box) */
+/* Status: Pure text with icon (No pill/container box) */
 .headcount-status-text,
 .headcount-status-badge {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 6px;
   padding: 0 !important;
   background: transparent !important;
   border: none !important;
@@ -492,6 +492,12 @@
   letter-spacing: 0.01em;
   white-space: nowrap;
   line-height: 1.25;
+}
+
+.headcount-status-icon {
+  flex-shrink: 0;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 /* Status: Needs Hiring (Warm Amber text + dot) */
