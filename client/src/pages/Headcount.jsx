@@ -178,50 +178,46 @@ const Headcount = () => {
     };
   }, [departments]);
 
-  // Render colored status badge
+  // Render colored status text (Clean Dot + Text, No Container Box)
   const renderStatusBadge = (status) => {
     switch (status) {
       case 'Needs Hiring':
         return (
-          <span className="headcount-status-badge badge-needs-hiring" data-testid="status-badge-needs-hiring">
+          <span className="headcount-status-text status-needs-hiring badge-needs-hiring" data-testid="status-badge-needs-hiring">
             <span className="headcount-status-dot" />
-            <UserPlus size={13} />
             <span>Needs Hiring</span>
           </span>
         );
       case 'Balanced':
         return (
-          <span className="headcount-status-badge badge-balanced" data-testid="status-badge-balanced">
+          <span className="headcount-status-text status-balanced badge-balanced" data-testid="status-badge-balanced">
             <span className="headcount-status-dot" />
-            <CheckCircle2 size={13} />
             <span>Balanced</span>
           </span>
         );
       case 'Overstaffed - Review':
         return (
-          <span className="headcount-status-badge badge-overstaffed" data-testid="status-badge-overstaffed">
+          <span className="headcount-status-text status-overstaffed badge-overstaffed" data-testid="status-badge-overstaffed">
             <span className="headcount-status-dot" />
-            <AlertTriangle size={13} />
             <span>Overstaffed - Review</span>
           </span>
         );
       case 'Not Set':
       default:
         return (
-          <span className="headcount-status-badge badge-not-set" data-testid="status-badge-not-set">
+          <span className="headcount-status-text status-not-set badge-not-set" data-testid="status-badge-not-set">
             <span className="headcount-status-dot" />
-            <HelpCircle size={13} />
             <span>Not Set</span>
           </span>
         );
     }
   };
 
-  // Render gap pill
-  const renderGapPill = (gap, status) => {
+  // Render gap as clean colored text (No Container Box)
+  const renderGapText = (gap, status) => {
     if (status === 'Not Set') {
       return (
-        <span className="headcount-gap-pill negative" title="Approved target is 0">
+        <span className="headcount-gap-text gap-not-set" title="Approved target is 0">
           —
         </span>
       );
@@ -229,7 +225,7 @@ const Headcount = () => {
 
     if (gap > 0) {
       return (
-        <span className="headcount-gap-pill positive" title={`${gap} positions open`}>
+        <span className="headcount-gap-text gap-positive positive" title={`${gap} positions open`}>
           +{gap}
         </span>
       );
@@ -237,17 +233,18 @@ const Headcount = () => {
 
     if (gap === 0) {
       return (
-        <span className="headcount-gap-pill zero" title="Headcount is balanced">
+        <span className="headcount-gap-text gap-zero zero" title="Headcount is balanced">
           0
         </span>
       );
     }
 
     return (
-      <span className="headcount-gap-pill negative" title={`${Math.abs(gap)} over target`}>
+      <span className="headcount-gap-text gap-negative negative" title={`${Math.abs(gap)} over target`}>
         {gap}
       </span>
     );
+  };
   };
 
   if (isEmployee) {
