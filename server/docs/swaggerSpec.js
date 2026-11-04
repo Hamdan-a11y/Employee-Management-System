@@ -746,6 +746,46 @@ X-CSRF-Token: <csrf_token> (for state-changing requests like POST, PUT, PATCH, D
         }
       }
     },
+    '/workforce/attrition': {
+      get: {
+        tags: ['Workforce'],
+        summary: 'Get department attrition rate for 3, 6, or 12 months (Admin, HR, Dept Manager)',
+        parameters: [
+          {
+            name: 'months',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', enum: [3, 6, 12], default: 12 },
+            description: 'Time window in months (3, 6, or 12)'
+          }
+        ],
+        responses: {
+          200: {
+            description: 'List of department attrition metrics',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'integer', example: 1 },
+                      name: { type: 'string', example: 'Engineering' },
+                      leavers: { type: 'integer', example: 2 },
+                      current: { type: 'integer', example: 30 },
+                      attritionRate: { type: 'number', example: 6.7 },
+                      status: { type: 'string', enum: ['Low', 'Medium', 'High'], example: 'Low' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Invalid months parameter (must be 3, 6, or 12)' },
+          403: { description: 'Forbidden - Employees have no access' }
+        }
+      }
+    },
     '/dashboard/stats': {
       get: {
         tags: ['Dashboard'],

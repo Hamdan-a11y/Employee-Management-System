@@ -3,6 +3,8 @@ const assert = require('node:assert');
 const {
   calculateHeadcountStatus,
   formatHeadcountRow,
+  calculateAttrition,
+  formatAttritionRow,
 } = require('../utils/headcount');
 const {
   makeRequest,
@@ -268,6 +270,139 @@ describe('Workforce Headcount vs. Approved Headcount Tests', () => {
         employee.headers
       );
       assert.strictEqual(res.statusCode, 403);
+    });
+  });
+
+  describe('4. Attrition Rate & Status Logic Unit Tests', () => {
+    it('returns 0% rate and "Low" status when active headcount is 0 (prevent divide by zero)', () => {
+      const res = calculateAttrition(0, 0);
+      assert.strictEqual(res.attritionRate, 0);
+      assert.strictEqual(res.status, 'Low');
+
+      const resWithLeavers = calculateAttrition(3, 0);
+      assert.strictEqual(resWithLeavers.attritionRate, 0);
+      assert.strictEqual(resWithLeavers.status, 'Low');
+    });
+
+    it('returns "Low" status when attrition rate is under 10%', () => {
+      // 1 leaver out of 20 = 5%
+      const res = calculateAttrition(1, 20);
+      assert.strictEqual(res.attritionRate, 5);
+      assert.strictEqual(res.status, 'Low');
+
+      // 9 out of 100 = 9%
+      const res2 = calculateAttrition(9, 100);
+      assert.strictEqual(res2.attritionRate, 9);
+      assert.strictEqual(res2.status, 'Low');
+    });
+
+    it('returns "Medium" status when attrition rate is between 10% and 20% (inclusive)', () => {
+      // 2 leavers out of 20 = 10%
+      const res10 = calculateAttrition(2, 20);
+      assert.strictEqual(res10.attritionRate, 10);
+      assert.strictEqual(res10.status, 'Medium');
+
+      // 3 leavers out of 20 = 15%
+      const res15 = calculateAttrition(3, 20);
+      assert.strictEqual(res15.attritionRate, 15);
+      assert.strictEqual(res15.status, 'Medium');
+
+      // 4 leavers out of 20 = 20%
+      const res20 = calculateAttrition(4, 20);
+      assert.strictEqual(res20.attritionRate, 20);
+      assert.strictEqual(res20.status, 'Medium');
+    });
+
+    it('returns "High" status when attrition rate is over 20%', () => {
+      // 5 leavers out of 20 = 25%
+      const res = calculateAttrition(5, 20);
+      assert.strictEqual(res.attritionRate, 25);
+      assert.strictEqual(res.status, 'High');
+
+      // 1 out of 3 = 33.3%
+      const res33 = calculateAttrition(1, 3);
+      assert.strictEqual(res33.attritionRate, 33.3);
+      assert.strictEqual(res33.status, 'High');
+    });
+
+    it('formats attrition row with leavers, current, attritionRate, and status', () => {
+      const row = formatAttritionRow({
+        id: 1,
+        name: 'Engineering',
+        leavers: 2,
+        current: 30,
+      });
+
+      assert.strictEqual(row.id, 1);
+      assert.strictEqual(row.name, 'Engineering');
+      assert.strictEqual(row.leavers, 2);
+      assert.strictEqual(row.current, 30);
+      assert.strictEqual(row.attritionRate, 6.7);
+      assert.strictEqual(row.status, 'Low');
+    });
+  });
+
+  describe('5. GET /api/workforce/attrition API Tests', () => {
+    it('Admin can fetch attrition data with default months=12', async () => {
+      const res = await makeRequest('GET', '/workforce/attrition', null, admin.cookies);
+      assert.strictEqual(res.statusCode, 200);
+      assert.ok(Array.isArray(res.data));
+      assert.ok(res.data.length > 0);
+
+      const dept = res.data[0];
+      assert.ok('name' in dept);
+      assert.ok('leavers' in dept);
+      assert.ok('attritionRate' in dept);
+      assert.ok('status' in dept);
+      assert.strictEqual(typeof dept.name, 'string');
+      assert.strictEqual(typeof dept.leavers, 'number');
+      assert.strictEqual(typeof dept.attritionRate, 'number');
+      assert.strictEqual(typeof dept.status, 'string');
+    });
+
+    it('Supports months=3, months=6, and months=12 query parameters', async () => {
+      for (const m of [3, 6, 12]) {
+        const res = await makeRequest('GET', `/workforce/attrition?months=${m}`, null, admin.cookies);
+        assert.strictEqual(res.statusCode, 200);
+        assert.ok(Array.isArray(res.data));
+      }
+    });
+
+    it('Rejects invalid months parameter (HTTP 400)', async () => {
+      const res1 = await makeRequest('GET', '/workforce/attrition?months=5', null, admin.cookies);
+      assert.strictEqual(res1.statusCode, 400);
+      assert.match(res1.data.message, /3, 6, or 12/i);
+
+      const res2 = await makeRequest('GET', '/workforce/attrition?months=invalid', null, admin.cookies);
+      assert.strictEqual(res2.statusCode, 400);
+    });
+
+    it('Departments with no leavers still show in results', async () => {
+      const res = await makeRequest('GET', '/workforce/attrition?months=12', null, admin.cookies);
+      assert.strictEqual(res.statusCode, 200);
+      const emptyDept = res.data.find((d) => d.id === testDeptId);
+      assert.ok(emptyDept, 'Empty department must be included in results');
+      assert.strictEqual(emptyDept.leavers, 0);
+      assert.strictEqual(emptyDept.attritionRate, 0);
+      assert.strictEqual(emptyDept.status, 'Low');
+    });
+
+    it('Department Manager views own department only for attrition', async () => {
+      const res = await makeRequest('GET', '/workforce/attrition?months=12', null, deptManager1.cookies);
+      assert.strictEqual(res.statusCode, 200);
+      assert.ok(Array.isArray(res.data));
+      assert.strictEqual(res.data.length, 1);
+      assert.strictEqual(res.data[0].id, 1);
+    });
+
+    it('Employee is denied access to workforce attrition (HTTP 403)', async () => {
+      const res = await makeRequest('GET', '/workforce/attrition?months=12', null, employee.cookies);
+      assert.strictEqual(res.statusCode, 403);
+    });
+
+    it('Unauthenticated request is rejected for attrition (HTTP 401)', async () => {
+      const res = await makeRequest('GET', '/workforce/attrition', null, []);
+      assert.strictEqual(res.statusCode, 401);
     });
   });
 });

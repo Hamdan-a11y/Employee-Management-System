@@ -593,3 +593,114 @@
   margin-bottom: var(--space-4);
 }
 
+/* Attrition Filter Selector */
+.headcount-attrition-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.headcount-attrition-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.headcount-attrition-calendar-icon {
+  color: var(--text-muted);
+}
+
+.headcount-attrition-select {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  background-color: var(--bg-surface);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.headcount-attrition-select:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+/* Attrition Rate Cell */
+.headcount-attrition-rate-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.headcount-attrition-rate {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.headcount-attrition-leavers {
+  font-size: 0.725rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+/* Attrition Status: Clean colored text (No Container Box) */
+.headcount-attrition-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.headcount-attrition-status .attrition-dot {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* Status Colors: Low (Emerald), Medium (Amber), High (Red) */
+.headcount-attrition-status.status-low {
+  color: #059669; /* Emerald */
+}
+
+.headcount-attrition-status.status-low .attrition-dot {
+  background-color: #10b981;
+}
+
+.headcount-attrition-status.status-medium {
+  color: #d97706; /* Amber */
+}
+
+.headcount-attrition-status.status-medium .attrition-dot {
+  background-color: #f59e0b;
+}
+
+.headcount-attrition-status.status-high {
+  color: #dc2626; /* Crisp Red */
+}
+
+.headcount-attrition-status.status-high .attrition-dot {
+  background-color: #ef4444;
+}
+
+

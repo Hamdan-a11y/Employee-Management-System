@@ -152,6 +152,40 @@ async function seedWorkforceData() {
     }
 
     console.log(`✓ Inserted/Synchronized ${insertedCount} new employees across departments!`);
+
+    // 4. Seed sample leavers with staggered termination_date values (2, 5, 8 months ago)
+    const leaversToSeed = [
+      { name: 'Chloe Former', email: 'chloe.former@company.com', phone: '+1-555-0301', dept: 'Marketing', designation: 'Marketing Associate', monthsAgo: 2 },
+      { name: 'Lucas Departed', email: 'lucas.departed@company.com', phone: '+1-555-0302', dept: 'Marketing', designation: 'Content Specialist', monthsAgo: 5 },
+      { name: 'Adam Exited', email: 'adam.exited@company.com', phone: '+1-555-0303', dept: 'Database', designation: 'Junior DBA', monthsAgo: 1 },
+      { name: 'Sam Engineer', email: 'sam.engineer@company.com', phone: '+1-555-0304', dept: 'Engineering', designation: 'QA Specialist', monthsAgo: 2 },
+      { name: 'Rachel Dev', email: 'rachel.dev@company.com', phone: '+1-555-0305', dept: 'Engineering', designation: 'Frontend Developer', monthsAgo: 8 },
+      { name: 'Ryan Seller', email: 'ryan.seller@company.com', phone: '+1-555-0306', dept: 'Sales', designation: 'Junior SDR', monthsAgo: 4 },
+      { name: 'Victor Neural', email: 'victor.neural@company.com', phone: '+1-555-0307', dept: 'AI', designation: 'Junior ML Engineer', monthsAgo: 7 },
+    ];
+
+    for (const leaver of leaversToSeed) {
+      const deptId = deptMap[leaver.dept];
+      if (!deptId) continue;
+
+      const [existing] = await connection.query('SELECT id FROM employees WHERE email = ?', [leaver.email]);
+      if (existing.length === 0) {
+        await connection.query(
+          `INSERT INTO employees (name, email, phone, department_id, designation, status, termination_date, deleted_at)
+           VALUES (?, ?, ?, ?, ?, 'Inactive', DATE_SUB(CURDATE(), INTERVAL ? MONTH), NULL)`,
+          [leaver.name, leaver.email, leaver.phone, deptId, leaver.designation, leaver.monthsAgo]
+        );
+      } else {
+        await connection.query(
+          `UPDATE employees 
+           SET department_id = ?, status = 'Inactive', termination_date = DATE_SUB(CURDATE(), INTERVAL ? MONTH)
+           WHERE id = ?`,
+          [deptId, leaver.monthsAgo, existing[0].id]
+        );
+      }
+    }
+    console.log(`✓ Seeded ${leaversToSeed.length} sample leavers with staggered termination dates!`);
+
     console.log('--- Workforce Data Population Completed Successfully! ---');
   } catch (err) {
     console.error('Error seeding workforce data:', err);

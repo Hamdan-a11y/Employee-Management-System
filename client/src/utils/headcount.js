@@ -55,3 +55,68 @@ export const STATUS_META = {
   },
 };
 
+/**
+ * Calculates attrition rate and status.
+ *
+ * Rules:
+ * - attritionRate = leavers ÷ current active headcount × 100 (return 0 if headcount is 0)
+ * - status:
+ *   - under 10% = "Low"
+ *   - 10 to 20% = "Medium"
+ *   - over 20% = "High"
+ *
+ * @param {number} leavers Number of leavers in period
+ * @param {number} current Current active headcount
+ * @returns {{ attritionRate: number, status: "Low" | "Medium" | "High" }}
+ */
+export function calculateAttrition(leavers, current) {
+  const l = Number(leavers) || 0;
+  const c = Number(current) || 0;
+
+  if (c <= 0) {
+    return {
+      attritionRate: 0,
+      status: 'Low',
+    };
+  }
+
+  const rawRate = (l / c) * 100;
+  const attritionRate = Math.round(rawRate * 10) / 10;
+
+  let status = 'Low';
+  if (attritionRate > 20) {
+    status = 'High';
+  } else if (attritionRate >= 10) {
+    status = 'Medium';
+  } else {
+    status = 'Low';
+  }
+
+  return {
+    attritionRate,
+    status,
+  };
+}
+
+export const ATTRITION_STATUS_META = {
+  Low: {
+    label: 'Low',
+    className: 'attrition-status-low',
+    color: '#059669',
+    description: 'Attrition rate is below 10%',
+  },
+  Medium: {
+    label: 'Medium',
+    className: 'attrition-status-medium',
+    color: '#d97706',
+    description: 'Attrition rate is between 10% and 20%',
+  },
+  High: {
+    label: 'High',
+    className: 'attrition-status-high',
+    color: '#dc2626',
+    description: 'Attrition rate exceeds 20%',
+  },
+};
+
+

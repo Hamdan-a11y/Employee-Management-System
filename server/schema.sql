@@ -63,8 +63,10 @@ CREATE TABLE IF NOT EXISTS employees (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   deleted_at TIMESTAMP NULL DEFAULT NULL,
+  termination_date DATE NULL DEFAULT NULL,
   FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
-  INDEX idx_employees_deleted_at (deleted_at)
+  INDEX idx_employees_deleted_at (deleted_at),
+  INDEX idx_employees_termination_date (termination_date)
 );
 
 -- Employee Documents Table

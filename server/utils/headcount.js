@@ -57,8 +57,74 @@ function formatHeadcountRow(row) {
   };
 }
 
+/**
+ * Calculates attrition rate and status.
+ *
+ * Rules:
+ * - attritionRate = leavers ÷ current active headcount × 100 (return 0 if headcount is 0)
+ * - status:
+ *   - under 10% = "Low"
+ *   - 10 to 20% = "Medium"
+ *   - over 20% = "High"
+ *
+ * @param {number} leavers Number of leavers in period
+ * @param {number} current Current active headcount
+ * @returns {{ attritionRate: number, status: "Low" | "Medium" | "High" }}
+ */
+function calculateAttrition(leavers, current) {
+  const l = Number(leavers) || 0;
+  const c = Number(current) || 0;
+
+  if (c <= 0) {
+    return {
+      attritionRate: 0,
+      status: 'Low',
+    };
+  }
+
+  const rawRate = (l / c) * 100;
+  const attritionRate = Math.round(rawRate * 10) / 10;
+
+  let status = 'Low';
+  if (attritionRate > 20) {
+    status = 'High';
+  } else if (attritionRate >= 10) {
+    status = 'Medium';
+  } else {
+    status = 'Low';
+  }
+
+  return {
+    attritionRate,
+    status,
+  };
+}
+
+/**
+ * Formats a raw database row into the standardized attrition response object.
+ *
+ * @param {object} row
+ * @returns {{ id: number, name: string, leavers: number, current: number, attritionRate: number, status: string }}
+ */
+function formatAttritionRow(row) {
+  const leavers = Number(row.leavers) || 0;
+  const current = Number(row.current) || 0;
+  const { attritionRate, status } = calculateAttrition(leavers, current);
+
+  return {
+    id: Number(row.id),
+    name: String(row.name),
+    leavers,
+    current,
+    attritionRate,
+    status,
+  };
+}
+
 module.exports = {
   calculateHeadcountStatus,
   formatHeadcountRow,
+  calculateAttrition,
+  formatAttritionRow,
 };
 

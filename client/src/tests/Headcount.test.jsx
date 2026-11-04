@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Headcount from '../pages/Headcount';
-import { calculateHeadcountStatus } from '../utils/headcount';
+import { calculateHeadcountStatus, calculateAttrition } from '../utils/headcount';
 import * as AuthContext from '../context/AuthContext';
 import * as NotificationContext from '../context/NotificationContext';
 import api from '../services/api';
@@ -46,6 +46,41 @@ describe('Workforce Headcount vs. Approved Headcount Frontend Tests', () => {
       current: 0,
       gap: 0,
       status: 'Not Set',
+    },
+  ];
+
+  const mockAttritionData = [
+    {
+      id: 1,
+      name: 'Engineering',
+      leavers: 1,
+      current: 7,
+      attritionRate: 14.3,
+      status: 'Medium',
+    },
+    {
+      id: 2,
+      name: 'Sales',
+      leavers: 0,
+      current: 5,
+      attritionRate: 0,
+      status: 'Low',
+    },
+    {
+      id: 3,
+      name: 'Marketing',
+      leavers: 2,
+      current: 5,
+      attritionRate: 40,
+      status: 'High',
+    },
+    {
+      id: 4,
+      name: 'Unassigned Research',
+      leavers: 0,
+      current: 0,
+      attritionRate: 0,
+      status: 'Low',
     },
   ];
 
@@ -362,6 +397,134 @@ describe('Workforce Headcount vs. Approved Headcount Frontend Tests', () => {
       expect(screen.getByText('Engineering')).toBeInTheDocument();
       expect(screen.queryByText('Sales')).not.toBeInTheDocument();
       expect(screen.queryByText('Marketing')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('6. Attrition Rate & Status Logic and Period Selector', () => {
+    describe('Unit Tests for calculateAttrition', () => {
+      it('returns rate 0 and status "Low" when current headcount is 0 (even if leavers > 0)', () => {
+        expect(calculateAttrition(0, 0)).toEqual({ attritionRate: 0, status: 'Low' });
+        expect(calculateAttrition(3, 0)).toEqual({ attritionRate: 0, status: 'Low' });
+      });
+
+      it('returns rate 0 and status "Low" when leavers = 0', () => {
+        expect(calculateAttrition(0, 15)).toEqual({ attritionRate: 0, status: 'Low' });
+      });
+
+      it('returns status "Low" when attrition rate is under 10%', () => {
+        const result = calculateAttrition(1, 20); // 5%
+        expect(result.attritionRate).toBe(5);
+        expect(result.status).toBe('Low');
+      });
+
+      it('returns status "Medium" when attrition rate is between 10% and 20% inclusive', () => {
+        const result10 = calculateAttrition(1, 10); // 10%
+        expect(result10.attritionRate).toBe(10);
+        expect(result10.status).toBe('Medium');
+
+        const result20 = calculateAttrition(2, 10); // 20%
+        expect(result20.attritionRate).toBe(20);
+        expect(result20.status).toBe('Medium');
+
+        const result14 = calculateAttrition(1, 7); // ~14.3%
+        expect(result14.attritionRate).toBe(14.3);
+        expect(result14.status).toBe('Medium');
+      });
+
+      it('returns status "High" when attrition rate is over 20%', () => {
+        const result = calculateAttrition(3, 10); // 30%
+        expect(result.attritionRate).toBe(30);
+        expect(result.status).toBe('High');
+      });
+    });
+
+    describe('UI Table Columns & Period Dropdown Selector', () => {
+      beforeEach(() => {
+        vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
+          user: { id: 1, name: 'Admin User', role: 'admin' },
+          isAdmin: true,
+          isHR: false,
+          isDeptManager: false,
+          isEmployee: false,
+        });
+
+        api.get.mockImplementation((url) => {
+          if (url.includes('/attrition')) {
+            return Promise.resolve({ data: mockAttritionData });
+          }
+          return Promise.resolve({ data: mockDepartmentData });
+        });
+      });
+
+      it('renders Attrition Rate and Attrition Status headers and period dropdown', async () => {
+        render(
+          <MemoryRouter>
+            <Headcount />
+          </MemoryRouter>
+        );
+
+        await waitFor(() => {
+          expect(screen.getByTestId('th-attrition-rate')).toBeInTheDocument();
+          expect(screen.getByTestId('th-attrition-status')).toBeInTheDocument();
+          expect(screen.getByTestId('attrition-period-select')).toBeInTheDocument();
+        });
+
+        expect(screen.getByTestId('th-attrition-rate')).toHaveTextContent('Attrition Rate');
+        expect(screen.getByTestId('th-attrition-status')).toHaveTextContent('Attrition Status');
+
+        const select = screen.getByTestId('attrition-period-select');
+        expect(select.value).toBe('12');
+      });
+
+      it('displays formatted attrition rate, status, and leavers count per department', async () => {
+        render(
+          <MemoryRouter>
+            <Headcount />
+          </MemoryRouter>
+        );
+
+        await waitFor(() => {
+          // Engineering: 14.3%, Medium, 1 leaver
+          expect(screen.getByTestId('attrition-rate-1')).toHaveTextContent('14.3%');
+          expect(screen.getByTestId('attrition-leavers-1')).toHaveTextContent('1 leaver');
+
+          // Sales: 0%, Low, 0 leavers
+          expect(screen.getByTestId('attrition-rate-2')).toHaveTextContent('0%');
+          expect(screen.getByTestId('attrition-leavers-2')).toHaveTextContent('0 leavers');
+
+          // Marketing: 40%, High, 2 leavers
+          expect(screen.getByTestId('attrition-rate-3')).toHaveTextContent('40%');
+          expect(screen.getByTestId('attrition-leavers-3')).toHaveTextContent('2 leavers');
+        });
+      });
+
+      it('fetches new attrition data when user switches period dropdown (e.g. to 3 or 6 months)', async () => {
+        render(
+          <MemoryRouter>
+            <Headcount />
+          </MemoryRouter>
+        );
+
+        await waitFor(() => {
+          expect(screen.getByTestId('attrition-period-select')).toBeInTheDocument();
+        });
+
+        const select = screen.getByTestId('attrition-period-select');
+
+        // Change to 6 months
+        fireEvent.change(select, { target: { value: '6' } });
+
+        await waitFor(() => {
+          expect(api.get).toHaveBeenCalledWith('/workforce/attrition?months=6');
+        });
+
+        // Change to 3 months
+        fireEvent.change(select, { target: { value: '3' } });
+
+        await waitFor(() => {
+          expect(api.get).toHaveBeenCalledWith('/workforce/attrition?months=3');
+        });
+      });
     });
   });
 });

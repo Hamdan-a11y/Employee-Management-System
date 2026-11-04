@@ -5,7 +5,7 @@ import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { DepartmentIcon } from '../utils/departmentIcons';
-import { calculateHeadcountStatus } from '../utils/headcount';
+import { calculateHeadcountStatus, calculateAttrition } from '../utils/headcount';
 import {
   Users,
   Search,
@@ -24,6 +24,7 @@ import {
   ShieldCheck,
   RefreshCw,
   Building2,
+  Calendar,
 } from 'lucide-react';
 import './Headcount.css';
 
@@ -36,6 +37,11 @@ const Headcount = () => {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+
+  // Attrition state (period: 3, 6, 12 months)
+  const [attritionPeriod, setAttritionPeriod] = useState(12);
+  const [attritionData, setAttritionData] = useState({});
+  const [attritionLoading, setAttritionLoading] = useState(false);
 
   // Inline edit state
   const [editingId, setEditingId] = useState(null);
@@ -64,11 +70,39 @@ const Headcount = () => {
     }
   };
 
+  const fetchAttrition = async (period = attritionPeriod) => {
+    try {
+      setAttritionLoading(true);
+      const res = await api.get(`/workforce/attrition?months=${period}`);
+      const map = {};
+      if (Array.isArray(res.data)) {
+        res.data.forEach((item) => {
+          map[item.id] = item;
+        });
+      }
+      setAttritionData(map);
+    } catch (err) {
+      console.error('Failed to load attrition data', err);
+    } finally {
+      setAttritionLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    await Promise.all([fetchHeadcount(), fetchAttrition(attritionPeriod)]);
+  };
+
   useEffect(() => {
     if (!isEmployee) {
       fetchHeadcount();
     }
   }, [isEmployee]);
+
+  useEffect(() => {
+    if (!isEmployee) {
+      fetchAttrition(attritionPeriod);
+    }
+  }, [isEmployee, attritionPeriod]);
 
   // Start inline editing a department
   const startEdit = (dept) => {
@@ -248,6 +282,34 @@ const Headcount = () => {
     );
   };
 
+  // Render attrition status as clean colored text (No Container Box)
+  const renderAttritionStatus = (status) => {
+    switch (status) {
+      case 'High':
+        return (
+          <span className="headcount-attrition-status status-high" data-testid="attrition-status-high">
+            <span className="attrition-dot"></span>
+            <span>High</span>
+          </span>
+        );
+      case 'Medium':
+        return (
+          <span className="headcount-attrition-status status-medium" data-testid="attrition-status-medium">
+            <span className="attrition-dot"></span>
+            <span>Medium</span>
+          </span>
+        );
+      case 'Low':
+      default:
+        return (
+          <span className="headcount-attrition-status status-low" data-testid="attrition-status-low">
+            <span className="attrition-dot"></span>
+            <span>Low</span>
+          </span>
+        );
+    }
+  };
+
   if (isEmployee) {
     return (
       <div className="app-container">
@@ -291,13 +353,13 @@ const Headcount = () => {
 
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             <button
-              onClick={fetchHeadcount}
-              disabled={loading}
+              onClick={handleRefresh}
+              disabled={loading || attritionLoading}
               className="btn btn-secondary"
-              title="Refresh headcount data"
+              title="Refresh headcount and attrition data"
               aria-label="Refresh headcount data"
             >
-              <RefreshCw size={15} className={loading ? 'animate-spin' : ''} />
+              <RefreshCw size={15} className={loading || attritionLoading ? 'animate-spin' : ''} />
               <span>Refresh</span>
             </button>
 
@@ -422,6 +484,25 @@ const Headcount = () => {
                 )
               )}
             </div>
+
+            <div className="headcount-attrition-filter">
+              <label htmlFor="attrition-period-select" className="headcount-attrition-label">
+                <Calendar size={14} className="headcount-attrition-calendar-icon" />
+                <span>Period:</span>
+              </label>
+              <select
+                id="attrition-period-select"
+                value={attritionPeriod}
+                onChange={(e) => setAttritionPeriod(Number(e.target.value))}
+                className="headcount-attrition-select"
+                data-testid="attrition-period-select"
+                aria-label="Attrition Period"
+              >
+                <option value={3}>Last 3 Months</option>
+                <option value={6}>Last 6 Months</option>
+                <option value={12}>Last 12 Months</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -436,20 +517,22 @@ const Headcount = () => {
                   <th className="headcount-th numeric">Current</th>
                   <th className="headcount-th numeric">Gap</th>
                   <th className="headcount-th">Status</th>
+                  <th className="headcount-th numeric" data-testid="th-attrition-rate">Attrition Rate</th>
+                  <th className="headcount-th" data-testid="th-attrition-status">Attrition Status</th>
                   {canEdit && <th className="headcount-th actions">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={canEdit ? 6 : 5} className="headcount-loading-cell">
+                    <td colSpan={canEdit ? 8 : 7} className="headcount-loading-cell">
                       <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 8px' }} />
                       <div>Loading headcount data...</div>
                     </td>
                   </tr>
                 ) : filteredDepartments.length === 0 ? (
                   <tr>
-                    <td colSpan={canEdit ? 6 : 5} className="headcount-empty-cell">
+                    <td colSpan={canEdit ? 8 : 7} className="headcount-empty-cell">
                       <div className="headcount-empty-wrapper">
                         <Users size={32} color="var(--text-muted)" />
                         <span className="headcount-empty-title">No departments found</span>
@@ -583,6 +666,27 @@ const Headcount = () => {
                         {/* Status */}
                         <td className="headcount-td">
                           {renderStatusBadge(dept.status)}
+                        </td>
+
+                        {/* Attrition Rate */}
+                        <td className="headcount-td numeric">
+                          <div className="headcount-attrition-rate-cell">
+                            <span className="headcount-attrition-rate" data-testid={`attrition-rate-${dept.id}`}>
+                              {attritionData[dept.id] !== undefined
+                                ? `${attritionData[dept.id].attritionRate}%`
+                                : '0%'}
+                            </span>
+                            <span className="headcount-attrition-leavers" data-testid={`attrition-leavers-${dept.id}`}>
+                              {attritionData[dept.id]?.leavers ?? 0} {attritionData[dept.id]?.leavers === 1 ? 'leaver' : 'leavers'}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* Attrition Status */}
+                        <td className="headcount-td">
+                          <div data-testid={`attrition-status-cell-${dept.id}`}>
+                            {renderAttritionStatus(attritionData[dept.id]?.status || 'Low')}
+                          </div>
                         </td>
 
                         {/* Actions (for Admin / HR) */}
