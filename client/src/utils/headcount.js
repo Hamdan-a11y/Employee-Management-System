@@ -209,5 +209,85 @@ export const OVERTIME_STATUS_META = {
   },
 };
 
+/**
+ * Calculates leave pressure percentage and status.
+ *
+ * Rules:
+ * - avgOnLeave = average of daily counts of employees on approved leave across working days
+ * - leavePressure = avgOnLeave ÷ active headcount × 100 (return 0 if headcount is 0)
+ * - status:
+ *   - under 5% = "Low"
+ *   - 5 to 10% = "Medium"
+ *   - over 10% = "High"
+ *
+ * @param {number} avgOnLeaveOrLeaveDays
+ * @param {number} activeHeadcount
+ * @param {number} [totalWorkDays=null]
+ * @returns {{ avgOnLeave: number, leavePressure: number, status: "Low" | "Medium" | "High" }}
+ */
+export function calculateLeavePressure(avgOnLeaveOrLeaveDays, activeHeadcount, totalWorkDays = null) {
+  let avgOnLeave = 0;
+  const headcount = Number(activeHeadcount) || 0;
+
+  if (totalWorkDays !== null && totalWorkDays !== undefined) {
+    const leaveDays = Number(avgOnLeaveOrLeaveDays) || 0;
+    const workDays = Number(totalWorkDays) || 0;
+    if (workDays > 0) {
+      avgOnLeave = leaveDays / workDays;
+    }
+  } else {
+    avgOnLeave = Number(avgOnLeaveOrLeaveDays) || 0;
+  }
+
+  if (headcount <= 0 || avgOnLeave <= 0) {
+    return {
+      avgOnLeave: Math.round(avgOnLeave * 10) / 10,
+      leavePressure: 0,
+      status: 'Low',
+    };
+  }
+
+  const rawPressure = (avgOnLeave / headcount) * 100;
+  const leavePressure = Math.round(rawPressure * 10) / 10;
+  const roundedAvg = Math.round(avgOnLeave * 10) / 10;
+
+  let status = 'Low';
+  if (leavePressure > 10) {
+    status = 'High';
+  } else if (leavePressure >= 5) {
+    status = 'Medium';
+  } else {
+    status = 'Low';
+  }
+
+  return {
+    avgOnLeave: roundedAvg,
+    leavePressure,
+    status,
+  };
+}
+
+export const LEAVE_PRESSURE_STATUS_META = {
+  Low: {
+    label: 'Low',
+    className: 'leave-pressure-status-low',
+    color: '#059669',
+    description: 'Leave pressure is under 5%',
+  },
+  Medium: {
+    label: 'Medium',
+    className: 'leave-pressure-status-medium',
+    color: '#d97706',
+    description: 'Leave pressure is between 5% and 10%',
+  },
+  High: {
+    label: 'High',
+    className: 'leave-pressure-status-high',
+    color: '#dc2626',
+    description: 'Leave pressure exceeds 10%',
+  },
+};
+
+
 
 

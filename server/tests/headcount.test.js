@@ -7,6 +7,8 @@ const {
   formatAttritionRow,
   calculateOvertime,
   formatOvertimeRow,
+  calculateLeavePressure,
+  formatLeavePressureRow,
 } = require('../utils/headcount');
 const {
   makeRequest,
@@ -554,6 +556,147 @@ describe('Workforce Headcount vs. Approved Headcount Tests', () => {
 
     it('Unauthenticated request is rejected for overtime (HTTP 401)', async () => {
       const res = await makeRequest('GET', '/workforce/overtime', null, []);
+      assert.strictEqual(res.statusCode, 401);
+    });
+  });
+
+  describe('6. Leave Pressure Calculation Logic Unit Tests', () => {
+    it('should return 0 leave pressure and "Low" when active headcount is 0', () => {
+      const res = calculateLeavePressure(5, 0);
+      assert.strictEqual(res.avgOnLeave, 5);
+      assert.strictEqual(res.leavePressure, 0);
+      assert.strictEqual(res.status, 'Low');
+    });
+
+    it('should return 0 leave pressure and "Low" when avgOnLeave is 0', () => {
+      const res = calculateLeavePressure(0, 10);
+      assert.strictEqual(res.avgOnLeave, 0);
+      assert.strictEqual(res.leavePressure, 0);
+      assert.strictEqual(res.status, 'Low');
+    });
+
+    it('should calculate avgOnLeave from leaveDays and totalWorkDays correctly', () => {
+      // 10 leave days across 20 working days = 0.5 avg daily on leave
+      // 0.5 / 10 headcount * 100 = 5% -> "Medium"
+      const res = calculateLeavePressure(10, 10, 20);
+      assert.strictEqual(res.avgOnLeave, 0.5);
+      assert.strictEqual(res.leavePressure, 5);
+      assert.strictEqual(res.status, 'Medium');
+    });
+
+    it('should return status "Low" when leave pressure is under 5%', () => {
+      // 0.4 / 10 headcount * 100 = 4% -> "Low"
+      const res = calculateLeavePressure(0.4, 10);
+      assert.strictEqual(res.avgOnLeave, 0.4);
+      assert.strictEqual(res.leavePressure, 4);
+      assert.strictEqual(res.status, 'Low');
+    });
+
+    it('should return status "Medium" when leave pressure is between 5% and 10%', () => {
+      // Exactly 5%
+      const res1 = calculateLeavePressure(0.5, 10);
+      assert.strictEqual(res1.leavePressure, 5);
+      assert.strictEqual(res1.status, 'Medium');
+
+      // 7.5%
+      const res2 = calculateLeavePressure(1.5, 20);
+      assert.strictEqual(res2.leavePressure, 7.5);
+      assert.strictEqual(res2.status, 'Medium');
+
+      // Exactly 10%
+      const res3 = calculateLeavePressure(1.0, 10);
+      assert.strictEqual(res3.leavePressure, 10);
+      assert.strictEqual(res3.status, 'Medium');
+    });
+
+    it('should return status "High" when leave pressure exceeds 10%', () => {
+      // 1.5 / 10 headcount * 100 = 15% -> "High"
+      const res = calculateLeavePressure(1.5, 10);
+      assert.strictEqual(res.avgOnLeave, 1.5);
+      assert.strictEqual(res.leavePressure, 15);
+      assert.strictEqual(res.status, 'High');
+    });
+
+    it('should format raw leave pressure database row correctly', () => {
+      const row = formatLeavePressureRow({
+        id: 7,
+        name: 'Product Design',
+        active_headcount: 10,
+        total_work_days: 20,
+        total_leave_days: 8,
+      });
+
+      assert.strictEqual(row.id, 7);
+      assert.strictEqual(row.name, 'Product Design');
+      assert.strictEqual(row.activeHeadcount, 10);
+      assert.strictEqual(row.totalLeaveDays, 8);
+      assert.strictEqual(row.avgOnLeave, 0.4); // 8 / 20 = 0.4
+      assert.strictEqual(row.leavePressure, 4); // (0.4 / 10) * 100 = 4%
+      assert.strictEqual(row.status, 'Low');
+    });
+  });
+
+  describe('7. GET /api/workforce/leave-pressure API Tests', () => {
+    it('Admin can fetch leave pressure data for all departments with default months=3', async () => {
+      const res = await makeRequest('GET', '/workforce/leave-pressure', null, admin.cookies);
+      assert.strictEqual(res.statusCode, 200);
+      assert.ok(Array.isArray(res.data));
+      assert.ok(res.data.length > 0);
+
+      const dept = res.data[0];
+      assert.ok('name' in dept);
+      assert.ok('avgOnLeave' in dept);
+      assert.ok('leavePressure' in dept);
+      assert.ok('status' in dept);
+      assert.strictEqual(typeof dept.name, 'string');
+      assert.strictEqual(typeof dept.avgOnLeave, 'number');
+      assert.strictEqual(typeof dept.leavePressure, 'number');
+      assert.strictEqual(typeof dept.status, 'string');
+    });
+
+    it('Supports months=1, months=3, and months=6 query parameters', async () => {
+      for (const m of [1, 3, 6]) {
+        const res = await makeRequest('GET', `/workforce/leave-pressure?months=${m}`, null, admin.cookies);
+        assert.strictEqual(res.statusCode, 200);
+        assert.ok(Array.isArray(res.data));
+      }
+    });
+
+    it('Rejects invalid months parameter (HTTP 400)', async () => {
+      const res1 = await makeRequest('GET', '/workforce/leave-pressure?months=12', null, admin.cookies);
+      assert.strictEqual(res1.statusCode, 400);
+      assert.match(res1.data.message, /1, 3, or 6/i);
+
+      const res2 = await makeRequest('GET', '/workforce/leave-pressure?months=invalid', null, admin.cookies);
+      assert.strictEqual(res2.statusCode, 400);
+    });
+
+    it('Departments with no leave still show in results (as 0 / "Low")', async () => {
+      const res = await makeRequest('GET', '/workforce/leave-pressure?months=3', null, admin.cookies);
+      assert.strictEqual(res.statusCode, 200);
+      const emptyDept = res.data.find((d) => d.id === testDeptId);
+      assert.ok(emptyDept, 'Empty department must be included in results');
+      assert.strictEqual(emptyDept.totalLeaveDays, 0);
+      assert.strictEqual(emptyDept.avgOnLeave, 0);
+      assert.strictEqual(emptyDept.leavePressure, 0);
+      assert.strictEqual(emptyDept.status, 'Low');
+    });
+
+    it('Department Manager views own department only for leave pressure', async () => {
+      const res = await makeRequest('GET', '/workforce/leave-pressure?months=3', null, deptManager1.cookies);
+      assert.strictEqual(res.statusCode, 200);
+      assert.ok(Array.isArray(res.data));
+      assert.strictEqual(res.data.length, 1);
+      assert.strictEqual(res.data[0].id, 1);
+    });
+
+    it('Employee is denied access to workforce leave pressure (HTTP 403)', async () => {
+      const res = await makeRequest('GET', '/workforce/leave-pressure?months=3', null, employee.cookies);
+      assert.strictEqual(res.statusCode, 403);
+    });
+
+    it('Unauthenticated request is rejected for leave pressure (HTTP 401)', async () => {
+      const res = await makeRequest('GET', '/workforce/leave-pressure', null, []);
       assert.strictEqual(res.statusCode, 401);
     });
   });

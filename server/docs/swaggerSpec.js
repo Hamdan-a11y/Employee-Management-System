@@ -826,6 +826,47 @@ X-CSRF-Token: <csrf_token> (for state-changing requests like POST, PUT, PATCH, D
         }
       }
     },
+    '/workforce/leave-pressure': {
+      get: {
+        tags: ['Workforce'],
+        summary: 'Get department leave pressure analytics for 1, 3, or 6 months (Admin, HR, Dept Manager)',
+        parameters: [
+          {
+            name: 'months',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', enum: [1, 3, 6], default: 3 },
+            description: 'Time window in months (1, 3, or 6)'
+          }
+        ],
+        responses: {
+          200: {
+            description: 'List of department leave pressure metrics',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'integer', example: 1 },
+                      name: { type: 'string', example: 'Engineering' },
+                      activeHeadcount: { type: 'integer', example: 30 },
+                      totalLeaveDays: { type: 'integer', example: 12 },
+                      avgOnLeave: { type: 'number', example: 0.2 },
+                      leavePressure: { type: 'number', example: 5.0 },
+                      status: { type: 'string', enum: ['Low', 'Medium', 'High'], example: 'Medium' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Invalid months parameter (must be 1, 3, or 6)' },
+          403: { description: 'Forbidden - Employees have no access' }
+        }
+      }
+    },
     '/dashboard/stats': {
       get: {
         tags: ['Dashboard'],

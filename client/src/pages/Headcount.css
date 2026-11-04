@@ -786,5 +786,81 @@
   background-color: #94a3b8;
 }
 
+/* Leave Pressure Table Cell & Status (Pure Colored Text, No Box) */
+.headcount-leave-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.headcount-leave-avg {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.headcount-leave-days {
+  font-size: 0.725rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.headcount-leave-pressure {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.headcount-leave-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.headcount-leave-status .leave-pressure-dot {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* Leave Pressure Status Colors: Low (<5% Emerald), Medium (5-10% Amber), High (>10% Red) */
+.headcount-leave-status.status-low {
+  color: #059669; /* Emerald */
+}
+
+.headcount-leave-status.status-low .leave-pressure-dot {
+  background-color: #10b981;
+}
+
+.headcount-leave-status.status-medium {
+  color: #d97706; /* Amber */
+}
+
+.headcount-leave-status.status-medium .leave-pressure-dot {
+  background-color: #f59e0b;
+}
+
+.headcount-leave-status.status-high {
+  color: #dc2626; /* Crisp Red */
+}
+
+.headcount-leave-status.status-high .leave-pressure-dot {
+  background-color: #ef4444;
+}
+
+
 
 

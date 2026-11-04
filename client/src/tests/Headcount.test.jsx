@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Headcount from '../pages/Headcount';
-import { calculateHeadcountStatus, calculateAttrition, calculateOvertime } from '../utils/headcount';
+import { calculateHeadcountStatus, calculateAttrition, calculateOvertime, calculateLeavePressure } from '../utils/headcount';
 import * as AuthContext from '../context/AuthContext';
 import * as NotificationContext from '../context/NotificationContext';
 import api from '../services/api';
@@ -116,6 +116,45 @@ describe('Workforce Headcount vs. Approved Headcount Frontend Tests', () => {
       avgDailyHours: 0,
       overtimePercent: 0,
       status: 'No Data',
+    },
+  ];
+
+  const mockLeaveData = [
+    {
+      id: 1,
+      name: 'Engineering',
+      activeHeadcount: 7,
+      totalLeaveDays: 7,
+      avgOnLeave: 0.3,
+      leavePressure: 4.3,
+      status: 'Low',
+    },
+    {
+      id: 2,
+      name: 'Sales',
+      activeHeadcount: 5,
+      totalLeaveDays: 10,
+      avgOnLeave: 0.4,
+      leavePressure: 8.0,
+      status: 'Medium',
+    },
+    {
+      id: 3,
+      name: 'Marketing',
+      activeHeadcount: 5,
+      totalLeaveDays: 20,
+      avgOnLeave: 0.8,
+      leavePressure: 16.0,
+      status: 'High',
+    },
+    {
+      id: 4,
+      name: 'Unassigned Research',
+      activeHeadcount: 0,
+      totalLeaveDays: 0,
+      avgOnLeave: 0,
+      leavePressure: 0,
+      status: 'Low',
     },
   ];
 
@@ -767,6 +806,164 @@ describe('Workforce Headcount vs. Approved Headcount Frontend Tests', () => {
 
         await waitFor(() => {
           expect(api.get).toHaveBeenCalledWith('/workforce/overtime?months=6');
+        });
+      });
+    });
+  });
+
+  describe('8. Leave Pressure Calculation Logic & UI Controls', () => {
+    describe('Unit Tests for calculateLeavePressure', () => {
+      it('returns avgOnLeave: 0, leavePressure: 0, status: "Low" when headcount <= 0 or avgOnLeave <= 0', () => {
+        expect(calculateLeavePressure(0, 10)).toEqual({ avgOnLeave: 0, leavePressure: 0, status: 'Low' });
+        expect(calculateLeavePressure(1.5, 0)).toEqual({ avgOnLeave: 1.5, leavePressure: 0, status: 'Low' });
+        expect(calculateLeavePressure(0, 0)).toEqual({ avgOnLeave: 0, leavePressure: 0, status: 'Low' });
+      });
+
+      it('calculates avgOnLeave correctly when totalWorkDays is supplied', () => {
+        // 10 leave days / 20 work days = 0.5 avgOnLeave
+        // 0.5 / 10 headcount * 100 = 5% Medium
+        const res = calculateLeavePressure(10, 10, 20);
+        expect(res.avgOnLeave).toBe(0.5);
+        expect(res.leavePressure).toBe(5);
+        expect(res.status).toBe('Medium');
+      });
+
+      it('returns status "Low" when leave pressure is under 5%', () => {
+        // 0.3 / 7 headcount * 100 = 4.3%
+        const res = calculateLeavePressure(0.3, 7);
+        expect(res.avgOnLeave).toBe(0.3);
+        expect(res.leavePressure).toBe(4.3);
+        expect(res.status).toBe('Low');
+      });
+
+      it('returns status "Medium" when leave pressure is between 5% and 10% inclusive', () => {
+        // 0.4 / 5 headcount * 100 = 8.0%
+        const res1 = calculateLeavePressure(0.4, 5);
+        expect(res1.avgOnLeave).toBe(0.4);
+        expect(res1.leavePressure).toBe(8.0);
+        expect(res1.status).toBe('Medium');
+
+        // Exactly 5%
+        const res2 = calculateLeavePressure(0.5, 10);
+        expect(res2.leavePressure).toBe(5.0);
+        expect(res2.status).toBe('Medium');
+
+        // Exactly 10%
+        const res3 = calculateLeavePressure(1.0, 10);
+        expect(res3.leavePressure).toBe(10.0);
+        expect(res3.status).toBe('Medium');
+      });
+
+      it('returns status "High" when leave pressure exceeds 10%', () => {
+        // 0.8 / 5 headcount * 100 = 16.0%
+        const res = calculateLeavePressure(0.8, 5);
+        expect(res.avgOnLeave).toBe(0.8);
+        expect(res.leavePressure).toBe(16.0);
+        expect(res.status).toBe('High');
+      });
+    });
+
+    describe('UI Table Columns & Period Dropdown Selector for Leave Pressure', () => {
+      beforeEach(() => {
+        vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
+          user: { id: 1, name: 'Admin User', role: 'admin' },
+          isAdmin: true,
+          isHR: false,
+          isDeptManager: false,
+          isEmployee: false,
+        });
+
+        api.get.mockImplementation((url) => {
+          if (url.includes('/leave-pressure')) {
+            return Promise.resolve({ data: mockLeaveData });
+          }
+          if (url.includes('/overtime')) {
+            return Promise.resolve({ data: mockOvertimeData });
+          }
+          if (url.includes('/attrition')) {
+            return Promise.resolve({ data: mockAttritionData });
+          }
+          return Promise.resolve({ data: mockDepartmentData });
+        });
+      });
+
+      it('renders Avg On Leave, Leave Pressure %, and Leave Status headers and period dropdown', async () => {
+        render(
+          <MemoryRouter>
+            <Headcount />
+          </MemoryRouter>
+        );
+
+        await waitFor(() => {
+          expect(screen.getByTestId('th-leave-avg')).toBeInTheDocument();
+          expect(screen.getByTestId('th-leave-pressure')).toBeInTheDocument();
+          expect(screen.getByTestId('th-leave-status')).toBeInTheDocument();
+          expect(screen.getByTestId('leave-period-select')).toBeInTheDocument();
+        });
+
+        expect(screen.getByTestId('th-leave-avg')).toHaveTextContent('Avg On Leave');
+        expect(screen.getByTestId('th-leave-pressure')).toHaveTextContent('Leave Pressure %');
+        expect(screen.getByTestId('th-leave-status')).toHaveTextContent('Leave Status');
+
+        const select = screen.getByTestId('leave-period-select');
+        expect(select.value).toBe('3');
+      });
+
+      it('displays formatted avg on leave, leave pressure percent, and status per department', async () => {
+        render(
+          <MemoryRouter>
+            <Headcount />
+          </MemoryRouter>
+        );
+
+        await waitFor(() => {
+          // Engineering: 0.3, 4.3%, Low
+          expect(screen.getByTestId('leave-avg-1')).toHaveTextContent('0.3');
+          expect(screen.getByTestId('leave-pressure-1')).toHaveTextContent('4.3%');
+          expect(screen.getByTestId('leave-status-cell-1')).toHaveTextContent('Low');
+
+          // Sales: 0.4, 8.0%, Medium
+          expect(screen.getByTestId('leave-avg-2')).toHaveTextContent('0.4');
+          expect(screen.getByTestId('leave-pressure-2')).toHaveTextContent('8%');
+          expect(screen.getByTestId('leave-status-cell-2')).toHaveTextContent('Medium');
+
+          // Marketing: 0.8, 16.0%, High
+          expect(screen.getByTestId('leave-avg-3')).toHaveTextContent('0.8');
+          expect(screen.getByTestId('leave-pressure-3')).toHaveTextContent('16%');
+          expect(screen.getByTestId('leave-status-cell-3')).toHaveTextContent('High');
+
+          // Unassigned Research: 0, 0%, Low
+          expect(screen.getByTestId('leave-avg-4')).toHaveTextContent('0');
+          expect(screen.getByTestId('leave-pressure-4')).toHaveTextContent('0%');
+          expect(screen.getByTestId('leave-status-cell-4')).toHaveTextContent('Low');
+        });
+      });
+
+      it('fetches new leave pressure data when user switches period dropdown (e.g. to 1 or 6 months)', async () => {
+        render(
+          <MemoryRouter>
+            <Headcount />
+          </MemoryRouter>
+        );
+
+        await waitFor(() => {
+          expect(screen.getByTestId('leave-period-select')).toBeInTheDocument();
+        });
+
+        const select = screen.getByTestId('leave-period-select');
+
+        // Change to 1 month
+        fireEvent.change(select, { target: { value: '1' } });
+
+        await waitFor(() => {
+          expect(api.get).toHaveBeenCalledWith('/workforce/leave-pressure?months=1');
+        });
+
+        // Change to 6 months
+        fireEvent.change(select, { target: { value: '6' } });
+
+        await waitFor(() => {
+          expect(api.get).toHaveBeenCalledWith('/workforce/leave-pressure?months=6');
         });
       });
     });

@@ -5,7 +5,7 @@ import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { DepartmentIcon } from '../utils/departmentIcons';
-import { calculateHeadcountStatus, calculateAttrition, calculateOvertime } from '../utils/headcount';
+import { calculateHeadcountStatus, calculateAttrition, calculateOvertime, calculateLeavePressure } from '../utils/headcount';
 import {
   Users,
   Search,
@@ -48,6 +48,11 @@ const Headcount = () => {
   const [overtimePeriod, setOvertimePeriod] = useState(3);
   const [overtimeData, setOvertimeData] = useState({});
   const [overtimeLoading, setOvertimeLoading] = useState(false);
+
+  // Leave Pressure state (period: 1, 3, 6 months)
+  const [leavePeriod, setLeavePeriod] = useState(3);
+  const [leaveData, setLeaveData] = useState({});
+  const [leaveLoading, setLeaveLoading] = useState(false);
 
   // Inline edit state
   const [editingId, setEditingId] = useState(null);
@@ -112,11 +117,30 @@ const Headcount = () => {
     }
   };
 
+  const fetchLeavePressure = async (period = leavePeriod) => {
+    try {
+      setLeaveLoading(true);
+      const res = await api.get(`/workforce/leave-pressure?months=${period}`);
+      const map = {};
+      if (Array.isArray(res.data)) {
+        res.data.forEach((item) => {
+          map[item.id] = item;
+        });
+      }
+      setLeaveData(map);
+    } catch (err) {
+      console.error('Failed to load workforce leave pressure data', err);
+    } finally {
+      setLeaveLoading(false);
+    }
+  };
+
   const handleRefresh = async () => {
     await Promise.all([
       fetchHeadcount(),
       fetchAttrition(attritionPeriod),
       fetchOvertime(overtimePeriod),
+      fetchLeavePressure(leavePeriod),
     ]);
   };
 
@@ -137,6 +161,12 @@ const Headcount = () => {
       fetchOvertime(overtimePeriod);
     }
   }, [isEmployee, overtimePeriod]);
+
+  useEffect(() => {
+    if (!isEmployee) {
+      fetchLeavePressure(leavePeriod);
+    }
+  }, [isEmployee, leavePeriod]);
 
   // Start inline editing a department
   const startEdit = (dept) => {
@@ -395,6 +425,34 @@ const Headcount = () => {
     }
   };
 
+  // Render leave pressure status as clean colored text (No Container Box)
+  const renderLeavePressureStatus = (status) => {
+    switch (status) {
+      case 'High':
+        return (
+          <span className="headcount-leave-status status-high" data-testid="leave-pressure-status-high">
+            <span className="leave-pressure-dot"></span>
+            <span>High</span>
+          </span>
+        );
+      case 'Medium':
+        return (
+          <span className="headcount-leave-status status-medium" data-testid="leave-pressure-status-medium">
+            <span className="leave-pressure-dot"></span>
+            <span>Medium</span>
+          </span>
+        );
+      case 'Low':
+      default:
+        return (
+          <span className="headcount-leave-status status-low" data-testid="leave-pressure-status-low">
+            <span className="leave-pressure-dot"></span>
+            <span>Low</span>
+          </span>
+        );
+    }
+  };
+
   if (isEmployee) {
     return (
       <div className="app-container">
@@ -439,12 +497,12 @@ const Headcount = () => {
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             <button
               onClick={handleRefresh}
-              disabled={loading || attritionLoading || overtimeLoading}
+              disabled={loading || attritionLoading || overtimeLoading || leaveLoading}
               className="btn btn-secondary"
-              title="Refresh headcount, attrition, and overtime data"
+              title="Refresh headcount, attrition, overtime, and leave pressure data"
               aria-label="Refresh headcount data"
             >
-              <RefreshCw size={15} className={loading || attritionLoading || overtimeLoading ? 'animate-spin' : ''} />
+              <RefreshCw size={15} className={loading || attritionLoading || overtimeLoading || leaveLoading ? 'animate-spin' : ''} />
               <span>Refresh</span>
             </button>
 
@@ -607,6 +665,25 @@ const Headcount = () => {
                 <option value={6}>Last 6 Months</option>
               </select>
             </div>
+
+            <div className="headcount-attrition-filter">
+              <label htmlFor="leave-period-select" className="headcount-attrition-label">
+                <Calendar size={14} className="headcount-attrition-calendar-icon" />
+                <span>Leave Pressure:</span>
+              </label>
+              <select
+                id="leave-period-select"
+                value={leavePeriod}
+                onChange={(e) => setLeavePeriod(Number(e.target.value))}
+                className="headcount-attrition-select"
+                data-testid="leave-period-select"
+                aria-label="Leave Pressure Period"
+              >
+                <option value={1}>Last 1 Month</option>
+                <option value={3}>Last 3 Months</option>
+                <option value={6}>Last 6 Months</option>
+              </select>
+            </div>
           </div>
         </div>
 
@@ -626,20 +703,23 @@ const Headcount = () => {
                   <th className="headcount-th numeric" data-testid="th-overtime-hours">Avg Daily Hours</th>
                   <th className="headcount-th numeric" data-testid="th-overtime-percent">Overtime %</th>
                   <th className="headcount-th" data-testid="th-overtime-status">Overtime Status</th>
+                  <th className="headcount-th numeric" data-testid="th-leave-avg">Avg On Leave</th>
+                  <th className="headcount-th numeric" data-testid="th-leave-pressure">Leave Pressure %</th>
+                  <th className="headcount-th" data-testid="th-leave-status">Leave Status</th>
                   {canEdit && <th className="headcount-th actions">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={canEdit ? 11 : 10} className="headcount-loading-cell">
+                    <td colSpan={canEdit ? 14 : 13} className="headcount-loading-cell">
                       <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 8px' }} />
                       <div>Loading headcount data...</div>
                     </td>
                   </tr>
                 ) : filteredDepartments.length === 0 ? (
                   <tr>
-                    <td colSpan={canEdit ? 11 : 10} className="headcount-empty-cell">
+                    <td colSpan={canEdit ? 14 : 13} className="headcount-empty-cell">
                       <div className="headcount-empty-wrapper">
                         <Users size={32} color="var(--text-muted)" />
                         <span className="headcount-empty-title">No departments found</span>
@@ -833,6 +913,38 @@ const Headcount = () => {
                         <td className="headcount-td">
                           <div data-testid={`overtime-status-cell-${dept.id}`}>
                             {renderOvertimeStatus(overtimeData[dept.id]?.status || 'No Data')}
+                          </div>
+                        </td>
+
+                        {/* Avg On Leave */}
+                        <td className="headcount-td numeric">
+                          <div className="headcount-leave-cell">
+                            <span className="headcount-leave-avg" data-testid={`leave-avg-${dept.id}`}>
+                              {leaveData[dept.id] && leaveData[dept.id].avgOnLeave !== undefined
+                                ? `${leaveData[dept.id].avgOnLeave}`
+                                : '0'}
+                            </span>
+                            {leaveData[dept.id]?.totalLeaveDays > 0 && (
+                              <span className="headcount-leave-days" data-testid={`leave-days-${dept.id}`}>
+                                {leaveData[dept.id].totalLeaveDays} {leaveData[dept.id].totalLeaveDays === 1 ? 'day' : 'days'}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Leave Pressure % */}
+                        <td className="headcount-td numeric">
+                          <span className="headcount-leave-pressure" data-testid={`leave-pressure-${dept.id}`}>
+                            {leaveData[dept.id] && leaveData[dept.id].leavePressure !== undefined
+                              ? `${leaveData[dept.id].leavePressure}%`
+                              : '0%'}
+                          </span>
+                        </td>
+
+                        {/* Leave Status */}
+                        <td className="headcount-td">
+                          <div data-testid={`leave-status-cell-${dept.id}`}>
+                            {renderLeavePressureStatus(leaveData[dept.id]?.status || 'Low')}
                           </div>
                         </td>
 

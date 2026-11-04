@@ -2,7 +2,12 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../db');
 const { authenticateToken } = require('../middleware/auth');
-const { formatHeadcountRow, formatAttritionRow, formatOvertimeRow } = require('../utils/headcount');
+const {
+  formatHeadcountRow,
+  formatAttritionRow,
+  formatOvertimeRow,
+  formatLeavePressureRow,
+} = require('../utils/headcount');
 
 // All workforce routes require authentication
 router.use(authenticateToken);
@@ -261,6 +266,112 @@ router.get('/overtime', async (req, res) => {
   } catch (error) {
     res.status(500).json({
       message: 'Failed to fetch workforce overtime data.',
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * GET /api/workforce/leave-pressure?months=3
+ *
+ * Query params:
+ * - months: 1, 3, or 6 only (default 3)
+ *
+ * Access:
+ * - Admin and HR Manager: view all departments
+ * - Department Manager: view own department only
+ * - Employee: no access (403 Forbidden)
+ *
+ * Returns per department:
+ * - id
+ * - name
+ * - avgOnLeave (average employees on approved leave per working day within last X months, 0 if no leave)
+ * - leavePressure (avgOnLeave ÷ active headcount × 100, 0 if headcount is 0)
+ * - status (under 5% = "Low", 5 to 10% = "Medium", over 10% = "High")
+ *
+ * Uses a single query so departments with no leave still show (as 0 / "Low").
+ */
+router.get('/leave-pressure', async (req, res) => {
+  try {
+    const user = req.user;
+
+    // Enforce role access
+    if (user.role === 'employee') {
+      return res.status(403).json({
+        message: 'Access denied. Employees do not have permission to access workforce leave pressure data.',
+        userRole: user.role,
+      });
+    }
+
+    if (user.role !== 'admin' && user.role !== 'hr_manager' && user.role !== 'department_manager') {
+      return res.status(403).json({
+        message: 'Access denied. Insufficient permissions for workforce leave pressure.',
+        userRole: user.role,
+      });
+    }
+
+    // Validate months parameter (default 3, allowed: 1, 3, 6 only)
+    const rawMonths = req.query.months !== undefined ? req.query.months : '3';
+    const months = parseInt(rawMonths, 10);
+
+    if (![1, 3, 6].includes(months)) {
+      return res.status(400).json({
+        message: 'Invalid months parameter. Allowed values are 1, 3, or 6 only.',
+      });
+    }
+
+    // Single query counting working days and employee-leave days using recursive CTE
+    let deptWhere = '';
+    const params = [months];
+
+    if (user.role === 'department_manager') {
+      if (!user.department_id) {
+        return res.json([]);
+      }
+      deptWhere = ' WHERE d.id = ?';
+      params.push(user.department_id);
+    }
+
+    const sql = `
+      WITH RECURSIVE calendar AS (
+        SELECT DATE_SUB(CURDATE(), INTERVAL ? MONTH) AS dt
+        UNION ALL
+        SELECT DATE_ADD(dt, INTERVAL 1 DAY)
+        FROM calendar
+        WHERE dt < CURDATE()
+      ),
+      working_days AS (
+        SELECT dt
+        FROM calendar
+        WHERE DAYOFWEEK(dt) NOT IN (1, 7)
+          AND DATE_FORMAT(dt, '%m-%d') NOT IN ('01-01', '07-04', '12-25')
+      )
+      SELECT 
+        d.id,
+        d.name,
+        COUNT(DISTINCT CASE WHEN e.deleted_at IS NULL AND e.status = 'Active' THEN e.id ELSE NULL END) AS active_headcount,
+        (SELECT COUNT(*) FROM working_days) AS total_work_days,
+        COUNT(DISTINCT CASE 
+          WHEN lr.id IS NOT NULL 
+          THEN CONCAT(wd.dt, '-', lr.employee_id) 
+          ELSE NULL 
+        END) AS total_leave_days
+      FROM departments d
+      LEFT JOIN employees e ON d.id = e.department_id AND e.deleted_at IS NULL AND e.status = 'Active'
+      LEFT JOIN leave_requests lr ON e.id = lr.employee_id AND lr.status = 'APPROVED'
+      LEFT JOIN working_days wd ON wd.dt >= lr.start_date AND wd.dt <= lr.end_date
+      ${deptWhere}
+      GROUP BY d.id, d.name
+      ORDER BY d.name ASC;
+    `;
+
+    const [rows] = await pool.query(sql, params);
+    const result = rows.map(formatLeavePressureRow);
+
+    res.json(result);
+  } catch (error) {
+    res.status(500).json({
+      message: 'Failed to fetch workforce leave pressure data.',
       error: error.message,
     });
   }
