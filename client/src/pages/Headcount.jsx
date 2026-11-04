@@ -5,7 +5,7 @@ import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { DepartmentIcon } from '../utils/departmentIcons';
-import { calculateHeadcountStatus, calculateAttrition } from '../utils/headcount';
+import { calculateHeadcountStatus, calculateAttrition, calculateOvertime } from '../utils/headcount';
 import {
   Users,
   Search,
@@ -25,6 +25,7 @@ import {
   RefreshCw,
   Building2,
   Calendar,
+  Clock,
 } from 'lucide-react';
 import './Headcount.css';
 
@@ -42,6 +43,11 @@ const Headcount = () => {
   const [attritionPeriod, setAttritionPeriod] = useState(12);
   const [attritionData, setAttritionData] = useState({});
   const [attritionLoading, setAttritionLoading] = useState(false);
+
+  // Overtime state (period: 1, 3, 6 months)
+  const [overtimePeriod, setOvertimePeriod] = useState(3);
+  const [overtimeData, setOvertimeData] = useState({});
+  const [overtimeLoading, setOvertimeLoading] = useState(false);
 
   // Inline edit state
   const [editingId, setEditingId] = useState(null);
@@ -88,8 +94,30 @@ const Headcount = () => {
     }
   };
 
+  const fetchOvertime = async (period = overtimePeriod) => {
+    try {
+      setOvertimeLoading(true);
+      const res = await api.get(`/workforce/overtime?months=${period}`);
+      const map = {};
+      if (Array.isArray(res.data)) {
+        res.data.forEach((item) => {
+          map[item.id] = item;
+        });
+      }
+      setOvertimeData(map);
+    } catch (err) {
+      console.error('Failed to load workforce overtime data', err);
+    } finally {
+      setOvertimeLoading(false);
+    }
+  };
+
   const handleRefresh = async () => {
-    await Promise.all([fetchHeadcount(), fetchAttrition(attritionPeriod)]);
+    await Promise.all([
+      fetchHeadcount(),
+      fetchAttrition(attritionPeriod),
+      fetchOvertime(overtimePeriod),
+    ]);
   };
 
   useEffect(() => {
@@ -103,6 +131,12 @@ const Headcount = () => {
       fetchAttrition(attritionPeriod);
     }
   }, [isEmployee, attritionPeriod]);
+
+  useEffect(() => {
+    if (!isEmployee) {
+      fetchOvertime(overtimePeriod);
+    }
+  }, [isEmployee, overtimePeriod]);
 
   // Start inline editing a department
   const startEdit = (dept) => {
@@ -159,6 +193,22 @@ const Headcount = () => {
           return d;
         })
       );
+
+      // Recompute attrition data for department with new approved target
+      setAttritionData((prev) => {
+        const existing = prev[deptId];
+        const leavers = existing?.leavers || 0;
+        const currentStaff = departments.find((d) => d.id === deptId)?.current || 0;
+        const newAttr = calculateAttrition(leavers, currentStaff, num);
+        return {
+          ...prev,
+          [deptId]: {
+            ...existing,
+            approved: num,
+            ...newAttr,
+          },
+        };
+      });
 
       success('Approved headcount updated successfully!');
       setEditingId(null);
@@ -310,6 +360,41 @@ const Headcount = () => {
     }
   };
 
+  // Render overtime status as clean colored text (No Container Box)
+  const renderOvertimeStatus = (status) => {
+    switch (status) {
+      case 'Very High':
+        return (
+          <span className="headcount-overtime-status status-very-high" data-testid="overtime-status-very-high">
+            <span className="overtime-dot"></span>
+            <span>Very High</span>
+          </span>
+        );
+      case 'High':
+        return (
+          <span className="headcount-overtime-status status-high" data-testid="overtime-status-high">
+            <span className="overtime-dot"></span>
+            <span>High</span>
+          </span>
+        );
+      case 'Normal':
+        return (
+          <span className="headcount-overtime-status status-normal" data-testid="overtime-status-normal">
+            <span className="overtime-dot"></span>
+            <span>Normal</span>
+          </span>
+        );
+      case 'No Data':
+      default:
+        return (
+          <span className="headcount-overtime-status status-no-data" data-testid="overtime-status-no-data">
+            <span className="overtime-dot"></span>
+            <span>No Data</span>
+          </span>
+        );
+    }
+  };
+
   if (isEmployee) {
     return (
       <div className="app-container">
@@ -354,12 +439,12 @@ const Headcount = () => {
           <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
             <button
               onClick={handleRefresh}
-              disabled={loading || attritionLoading}
+              disabled={loading || attritionLoading || overtimeLoading}
               className="btn btn-secondary"
-              title="Refresh headcount and attrition data"
+              title="Refresh headcount, attrition, and overtime data"
               aria-label="Refresh headcount data"
             >
-              <RefreshCw size={15} className={loading || attritionLoading ? 'animate-spin' : ''} />
+              <RefreshCw size={15} className={loading || attritionLoading || overtimeLoading ? 'animate-spin' : ''} />
               <span>Refresh</span>
             </button>
 
@@ -488,7 +573,7 @@ const Headcount = () => {
             <div className="headcount-attrition-filter">
               <label htmlFor="attrition-period-select" className="headcount-attrition-label">
                 <Calendar size={14} className="headcount-attrition-calendar-icon" />
-                <span>Period:</span>
+                <span>Attrition:</span>
               </label>
               <select
                 id="attrition-period-select"
@@ -501,6 +586,25 @@ const Headcount = () => {
                 <option value={3}>Last 3 Months</option>
                 <option value={6}>Last 6 Months</option>
                 <option value={12}>Last 12 Months</option>
+              </select>
+            </div>
+
+            <div className="headcount-attrition-filter">
+              <label htmlFor="overtime-period-select" className="headcount-attrition-label">
+                <Clock size={14} className="headcount-attrition-calendar-icon" />
+                <span>Overtime:</span>
+              </label>
+              <select
+                id="overtime-period-select"
+                value={overtimePeriod}
+                onChange={(e) => setOvertimePeriod(Number(e.target.value))}
+                className="headcount-attrition-select"
+                data-testid="overtime-period-select"
+                aria-label="Overtime Period"
+              >
+                <option value={1}>Last 1 Month</option>
+                <option value={3}>Last 3 Months</option>
+                <option value={6}>Last 6 Months</option>
               </select>
             </div>
           </div>
@@ -519,20 +623,23 @@ const Headcount = () => {
                   <th className="headcount-th">Status</th>
                   <th className="headcount-th numeric" data-testid="th-attrition-rate">Attrition Rate</th>
                   <th className="headcount-th" data-testid="th-attrition-status">Attrition Status</th>
+                  <th className="headcount-th numeric" data-testid="th-overtime-hours">Avg Daily Hours</th>
+                  <th className="headcount-th numeric" data-testid="th-overtime-percent">Overtime %</th>
+                  <th className="headcount-th" data-testid="th-overtime-status">Overtime Status</th>
                   {canEdit && <th className="headcount-th actions">Actions</th>}
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={canEdit ? 8 : 7} className="headcount-loading-cell">
+                    <td colSpan={canEdit ? 11 : 10} className="headcount-loading-cell">
                       <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 8px' }} />
                       <div>Loading headcount data...</div>
                     </td>
                   </tr>
                 ) : filteredDepartments.length === 0 ? (
                   <tr>
-                    <td colSpan={canEdit ? 8 : 7} className="headcount-empty-cell">
+                    <td colSpan={canEdit ? 11 : 10} className="headcount-empty-cell">
                       <div className="headcount-empty-wrapper">
                         <Users size={32} color="var(--text-muted)" />
                         <span className="headcount-empty-title">No departments found</span>
@@ -670,22 +777,62 @@ const Headcount = () => {
 
                         {/* Attrition Rate */}
                         <td className="headcount-td numeric">
-                          <div className="headcount-attrition-rate-cell">
-                            <span className="headcount-attrition-rate" data-testid={`attrition-rate-${dept.id}`}>
-                              {attritionData[dept.id] !== undefined
-                                ? `${attritionData[dept.id].attritionRate}%`
-                                : '0%'}
-                            </span>
-                            <span className="headcount-attrition-leavers" data-testid={`attrition-leavers-${dept.id}`}>
-                              {attritionData[dept.id]?.leavers ?? 0} {attritionData[dept.id]?.leavers === 1 ? 'leaver' : 'leavers'}
-                            </span>
-                          </div>
+                          {(() => {
+                            const leavers = attritionData[dept.id]?.leavers ?? 0;
+                            const attr = calculateAttrition(leavers, dept.current, dept.approved);
+                            return (
+                              <div className="headcount-attrition-rate-cell">
+                                <span className="headcount-attrition-rate" data-testid={`attrition-rate-${dept.id}`}>
+                                  {`${attr.attritionRate}%`}
+                                </span>
+                                <span className="headcount-attrition-leavers" data-testid={`attrition-leavers-${dept.id}`}>
+                                  {leavers} {leavers === 1 ? 'leaver' : 'leavers'}
+                                </span>
+                              </div>
+                            );
+                          })()}
                         </td>
 
                         {/* Attrition Status */}
                         <td className="headcount-td">
                           <div data-testid={`attrition-status-cell-${dept.id}`}>
-                            {renderAttritionStatus(attritionData[dept.id]?.status || 'Low')}
+                            {(() => {
+                              const leavers = attritionData[dept.id]?.leavers ?? 0;
+                              const attr = calculateAttrition(leavers, dept.current, dept.approved);
+                              return renderAttritionStatus(attr.status);
+                            })()}
+                          </div>
+                        </td>
+
+                        {/* Avg Daily Hours */}
+                        <td className="headcount-td numeric">
+                          <div className="headcount-overtime-cell">
+                            <span className="headcount-overtime-hours" data-testid={`overtime-hours-${dept.id}`}>
+                              {overtimeData[dept.id] && overtimeData[dept.id].status !== 'No Data'
+                                ? `${overtimeData[dept.id].avgDailyHours}h`
+                                : '—'}
+                            </span>
+                            {overtimeData[dept.id]?.attendanceDays > 0 && (
+                              <span className="headcount-overtime-days" data-testid={`overtime-days-${dept.id}`}>
+                                {overtimeData[dept.id].attendanceDays} {overtimeData[dept.id].attendanceDays === 1 ? 'day' : 'days'}
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Overtime % */}
+                        <td className="headcount-td numeric">
+                          <span className="headcount-overtime-percent" data-testid={`overtime-percent-${dept.id}`}>
+                            {overtimeData[dept.id] && overtimeData[dept.id].status !== 'No Data'
+                              ? `${overtimeData[dept.id].overtimePercent}%`
+                              : '—'}
+                          </span>
+                        </td>
+
+                        {/* Overtime Status */}
+                        <td className="headcount-td">
+                          <div data-testid={`overtime-status-cell-${dept.id}`}>
+                            {renderOvertimeStatus(overtimeData[dept.id]?.status || 'No Data')}
                           </div>
                         </td>
 

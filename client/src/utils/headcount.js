@@ -59,7 +59,8 @@ export const STATUS_META = {
  * Calculates attrition rate and status.
  *
  * Rules:
- * - attritionRate = leavers ÷ current active headcount × 100 (return 0 if headcount is 0)
+ * - If approved target headcount > 0, base = approved; otherwise base = current active headcount
+ * - attritionRate = leavers ÷ base × 100 (return 0 if base is 0)
  * - status:
  *   - under 10% = "Low"
  *   - 10 to 20% = "Medium"
@@ -67,20 +68,24 @@ export const STATUS_META = {
  *
  * @param {number} leavers Number of leavers in period
  * @param {number} current Current active headcount
+ * @param {number} [approved=0] Approved target headcount
  * @returns {{ attritionRate: number, status: "Low" | "Medium" | "High" }}
  */
-export function calculateAttrition(leavers, current) {
+export function calculateAttrition(leavers, current, approved = 0) {
   const l = Number(leavers) || 0;
   const c = Number(current) || 0;
+  const a = Number(approved) || 0;
 
-  if (c <= 0) {
+  const base = a > 0 ? a : c;
+
+  if (base <= 0) {
     return {
       attritionRate: 0,
       status: 'Low',
     };
   }
 
-  const rawRate = (l / c) * 100;
+  const rawRate = (l / base) * 100;
   const attritionRate = Math.round(rawRate * 10) / 10;
 
   let status = 'Low';
@@ -118,5 +123,91 @@ export const ATTRITION_STATUS_META = {
     description: 'Attrition rate exceeds 20%',
   },
 };
+
+/**
+ * Calculates overtime percentage and status based on average daily hours and attendance days.
+ *
+ * Rules:
+ * - avgDailyHours = average working hours per attendance day within last X months
+ * - If no attendance data (attendanceDays = 0 or avgDailyHours = 0):
+ *   avgDailyHours = 0, overtimePercent = 0, status = "No Data"
+ * - overtimePercent = (avgDailyHours - 8) ÷ 8 × 100 (0 if negative)
+ * - status:
+ *   - under 5% = "Normal"
+ *   - 5 to 15% = "High"
+ *   - over 15% = "Very High"
+ *
+ * @param {number} avgDailyHours Average daily working hours
+ * @param {number} [attendanceDays] Number of valid attendance days
+ * @returns {{ avgDailyHours: number, overtimePercent: number, status: "Normal" | "High" | "Very High" | "No Data" }}
+ */
+export function calculateOvertime(avgDailyHours, attendanceDays = 1) {
+  const hours = Number(avgDailyHours) || 0;
+  const days = attendanceDays !== undefined ? Number(attendanceDays) : 1;
+
+  if (days <= 0 || hours <= 0) {
+    return {
+      avgDailyHours: 0,
+      overtimePercent: 0,
+      status: 'No Data',
+    };
+  }
+
+  const roundedHours = Math.round(hours * 10) / 10;
+
+  if (roundedHours <= 8) {
+    return {
+      avgDailyHours: roundedHours,
+      overtimePercent: 0,
+      status: 'Normal',
+    };
+  }
+
+  const rawOvertime = ((roundedHours - 8) / 8) * 100;
+  const overtimePercent = Math.max(0, Math.round(rawOvertime * 10) / 10);
+
+  let status = 'Normal';
+  if (overtimePercent > 15) {
+    status = 'Very High';
+  } else if (overtimePercent >= 5) {
+    status = 'High';
+  } else {
+    status = 'Normal';
+  }
+
+  return {
+    avgDailyHours: roundedHours,
+    overtimePercent,
+    status,
+  };
+}
+
+export const OVERTIME_STATUS_META = {
+  Normal: {
+    label: 'Normal',
+    className: 'overtime-status-normal',
+    color: '#059669',
+    description: 'Overtime is under 5%',
+  },
+  High: {
+    label: 'High',
+    className: 'overtime-status-high',
+    color: '#d97706',
+    description: 'Overtime is between 5% and 15%',
+  },
+  'Very High': {
+    label: 'Very High',
+    className: 'overtime-status-very-high',
+    color: '#dc2626',
+    description: 'Overtime exceeds 15%',
+  },
+  'No Data': {
+    label: 'No Data',
+    className: 'overtime-status-no-data',
+    color: '#64748b',
+    description: 'No attendance records in period',
+  },
+};
+
 
 

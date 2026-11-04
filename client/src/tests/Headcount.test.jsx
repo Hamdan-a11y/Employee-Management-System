@@ -3,7 +3,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import Headcount from '../pages/Headcount';
-import { calculateHeadcountStatus, calculateAttrition } from '../utils/headcount';
+import { calculateHeadcountStatus, calculateAttrition, calculateOvertime } from '../utils/headcount';
 import * as AuthContext from '../context/AuthContext';
 import * as NotificationContext from '../context/NotificationContext';
 import api from '../services/api';
@@ -81,6 +81,41 @@ describe('Workforce Headcount vs. Approved Headcount Frontend Tests', () => {
       current: 0,
       attritionRate: 0,
       status: 'Low',
+    },
+  ];
+
+  const mockOvertimeData = [
+    {
+      id: 1,
+      name: 'Engineering',
+      attendanceDays: 20,
+      avgDailyHours: 8.6,
+      overtimePercent: 7.5,
+      status: 'High',
+    },
+    {
+      id: 2,
+      name: 'Sales',
+      attendanceDays: 15,
+      avgDailyHours: 9.4,
+      overtimePercent: 17.5,
+      status: 'Very High',
+    },
+    {
+      id: 3,
+      name: 'Marketing',
+      attendanceDays: 12,
+      avgDailyHours: 8.2,
+      overtimePercent: 2.5,
+      status: 'Normal',
+    },
+    {
+      id: 4,
+      name: 'Unassigned Research',
+      attendanceDays: 0,
+      avgDailyHours: 0,
+      overtimePercent: 0,
+      status: 'No Data',
     },
   ];
 
@@ -436,6 +471,19 @@ describe('Workforce Headcount vs. Approved Headcount Frontend Tests', () => {
         expect(result.attritionRate).toBe(30);
         expect(result.status).toBe('High');
       });
+
+      it('recalculates attrition rate dynamically when approved target is increased', () => {
+        // 1 leaver, 5 current staff:
+        // With approved = 5 (or not set): 1 / 5 * 100 = 20% (Medium)
+        const res5 = calculateAttrition(1, 5, 5);
+        expect(res5.attritionRate).toBe(20);
+        expect(res5.status).toBe('Medium');
+
+        // When target is increased to 20: 1 / 20 * 100 = 5% (Low)
+        const res20 = calculateAttrition(1, 5, 20);
+        expect(res20.attritionRate).toBe(5);
+        expect(res20.status).toBe('Low');
+      });
     });
 
     describe('UI Table Columns & Period Dropdown Selector', () => {
@@ -484,17 +532,53 @@ describe('Workforce Headcount vs. Approved Headcount Frontend Tests', () => {
         );
 
         await waitFor(() => {
-          // Engineering: 14.3%, Medium, 1 leaver
-          expect(screen.getByTestId('attrition-rate-1')).toHaveTextContent('14.3%');
+          // Engineering: approved 10, current 7, 1 leaver => (1 / 10) * 100 = 10%, Medium
+          expect(screen.getByTestId('attrition-rate-1')).toHaveTextContent('10%');
           expect(screen.getByTestId('attrition-leavers-1')).toHaveTextContent('1 leaver');
 
-          // Sales: 0%, Low, 0 leavers
+          // Sales: approved 5, current 5, 0 leavers => 0%, Low
           expect(screen.getByTestId('attrition-rate-2')).toHaveTextContent('0%');
           expect(screen.getByTestId('attrition-leavers-2')).toHaveTextContent('0 leavers');
 
-          // Marketing: 40%, High, 2 leavers
-          expect(screen.getByTestId('attrition-rate-3')).toHaveTextContent('40%');
+          // Marketing: approved 3, current 5, 2 leavers => (2 / 3) * 100 = 66.7%, High
+          expect(screen.getByTestId('attrition-rate-3')).toHaveTextContent('66.7%');
           expect(screen.getByTestId('attrition-leavers-3')).toHaveTextContent('2 leavers');
+        });
+      });
+
+      it('dynamically changes attrition rate in UI when target is increased via inline edit', async () => {
+        api.put.mockResolvedValue({
+          data: {
+            message: 'Approved headcount updated successfully!',
+            department: { id: 1, name: 'Engineering', approved_headcount: 20 },
+          },
+        });
+
+        render(
+          <MemoryRouter>
+            <Headcount />
+          </MemoryRouter>
+        );
+
+        await waitFor(() => {
+          // Initially approved is 10 with 1 leaver => 10%
+          expect(screen.getByTestId('attrition-rate-1')).toHaveTextContent('10%');
+        });
+
+        // Click edit on department 1 (Engineering)
+        fireEvent.click(screen.getByTestId('inline-edit-btn-1'));
+
+        const input = screen.getByTestId('inline-input-1');
+        // Increase target from 10 to 20
+        fireEvent.change(input, { target: { value: '20' } });
+
+        // Save
+        fireEvent.click(screen.getByTestId('inline-save-1'));
+
+        await waitFor(() => {
+          // Now approved target is 20 with 1 leaver => (1 / 20) * 100 = 5%
+          expect(screen.getByTestId('attrition-rate-1')).toHaveTextContent('5%');
+          expect(screen.getByTestId('attrition-status-cell-1')).toHaveTextContent('Low');
         });
       });
 
@@ -523,6 +607,166 @@ describe('Workforce Headcount vs. Approved Headcount Frontend Tests', () => {
 
         await waitFor(() => {
           expect(api.get).toHaveBeenCalledWith('/workforce/attrition?months=3');
+        });
+      });
+    });
+  });
+
+  describe('7. Overtime Calculation Logic & UI Controls', () => {
+    describe('Unit Tests for calculateOvertime', () => {
+      it('returns avgDailyHours 0, overtimePercent 0, and status "No Data" when attendanceDays = 0 or hours <= 0', () => {
+        expect(calculateOvertime(0, 0)).toEqual({ avgDailyHours: 0, overtimePercent: 0, status: 'No Data' });
+        expect(calculateOvertime(8.5, 0)).toEqual({ avgDailyHours: 0, overtimePercent: 0, status: 'No Data' });
+        expect(calculateOvertime(0, 10)).toEqual({ avgDailyHours: 0, overtimePercent: 0, status: 'No Data' });
+      });
+
+      it('returns 0% overtime and status "Normal" when working hours <= 8.0 (0 if negative)', () => {
+        const exact = calculateOvertime(8.0, 5);
+        expect(exact.avgDailyHours).toBe(8.0);
+        expect(exact.overtimePercent).toBe(0);
+        expect(exact.status).toBe('Normal');
+
+        const under = calculateOvertime(7.4, 5);
+        expect(under.avgDailyHours).toBe(7.4);
+        expect(under.overtimePercent).toBe(0);
+        expect(under.status).toBe('Normal');
+      });
+
+      it('returns status "Normal" when overtime is under 5%', () => {
+        // (8.3 - 8) / 8 * 100 = 3.8%
+        const result = calculateOvertime(8.3, 10);
+        expect(result.avgDailyHours).toBe(8.3);
+        expect(result.overtimePercent).toBe(3.8);
+        expect(result.status).toBe('Normal');
+      });
+
+      it('returns status "High" when overtime is between 5% and 15% inclusive', () => {
+        // (8.4 - 8) / 8 * 100 = 5.0%
+        const res5 = calculateOvertime(8.4, 10);
+        expect(res5.avgDailyHours).toBe(8.4);
+        expect(res5.overtimePercent).toBe(5.0);
+        expect(res5.status).toBe('High');
+
+        // (8.6 - 8) / 8 * 100 = 7.5%
+        const res7 = calculateOvertime(8.6, 10);
+        expect(res7.avgDailyHours).toBe(8.6);
+        expect(res7.overtimePercent).toBe(7.5);
+        expect(res7.status).toBe('High');
+
+        // (9.2 - 8) / 8 * 100 = 15.0%
+        const res15 = calculateOvertime(9.2, 10);
+        expect(res15.avgDailyHours).toBe(9.2);
+        expect(res15.overtimePercent).toBe(15.0);
+        expect(res15.status).toBe('High');
+      });
+
+      it('returns status "Very High" when overtime is over 15%', () => {
+        // (9.4 - 8) / 8 * 100 = 17.5%
+        const res = calculateOvertime(9.4, 10);
+        expect(res.avgDailyHours).toBe(9.4);
+        expect(res.overtimePercent).toBe(17.5);
+        expect(res.status).toBe('Very High');
+      });
+    });
+
+    describe('UI Table Columns & Period Dropdown Selector for Overtime', () => {
+      beforeEach(() => {
+        vi.spyOn(AuthContext, 'useAuth').mockReturnValue({
+          user: { id: 1, name: 'Admin User', role: 'admin' },
+          isAdmin: true,
+          isHR: false,
+          isDeptManager: false,
+          isEmployee: false,
+        });
+
+        api.get.mockImplementation((url) => {
+          if (url.includes('/overtime')) {
+            return Promise.resolve({ data: mockOvertimeData });
+          }
+          if (url.includes('/attrition')) {
+            return Promise.resolve({ data: mockAttritionData });
+          }
+          return Promise.resolve({ data: mockDepartmentData });
+        });
+      });
+
+      it('renders Avg Daily Hours, Overtime %, and Overtime Status headers and period dropdown', async () => {
+        render(
+          <MemoryRouter>
+            <Headcount />
+          </MemoryRouter>
+        );
+
+        await waitFor(() => {
+          expect(screen.getByTestId('th-overtime-hours')).toBeInTheDocument();
+          expect(screen.getByTestId('th-overtime-percent')).toBeInTheDocument();
+          expect(screen.getByTestId('th-overtime-status')).toBeInTheDocument();
+          expect(screen.getByTestId('overtime-period-select')).toBeInTheDocument();
+        });
+
+        expect(screen.getByTestId('th-overtime-hours')).toHaveTextContent('Avg Daily Hours');
+        expect(screen.getByTestId('th-overtime-percent')).toHaveTextContent('Overtime %');
+        expect(screen.getByTestId('th-overtime-status')).toHaveTextContent('Overtime Status');
+
+        const select = screen.getByTestId('overtime-period-select');
+        expect(select.value).toBe('3');
+      });
+
+      it('displays formatted avg daily hours, overtime percent, and status per department', async () => {
+        render(
+          <MemoryRouter>
+            <Headcount />
+          </MemoryRouter>
+        );
+
+        await waitFor(() => {
+          // Engineering: 8.6h, 7.5%, High
+          expect(screen.getByTestId('overtime-hours-1')).toHaveTextContent('8.6h');
+          expect(screen.getByTestId('overtime-percent-1')).toHaveTextContent('7.5%');
+          expect(screen.getByTestId('overtime-status-cell-1')).toHaveTextContent('High');
+
+          // Sales: 9.4h, 17.5%, Very High
+          expect(screen.getByTestId('overtime-hours-2')).toHaveTextContent('9.4h');
+          expect(screen.getByTestId('overtime-percent-2')).toHaveTextContent('17.5%');
+          expect(screen.getByTestId('overtime-status-cell-2')).toHaveTextContent('Very High');
+
+          // Marketing: 8.2h, 2.5%, Normal
+          expect(screen.getByTestId('overtime-hours-3')).toHaveTextContent('8.2h');
+          expect(screen.getByTestId('overtime-percent-3')).toHaveTextContent('2.5%');
+          expect(screen.getByTestId('overtime-status-cell-3')).toHaveTextContent('Normal');
+
+          // Unassigned Research: —, —, No Data
+          expect(screen.getByTestId('overtime-hours-4')).toHaveTextContent('—');
+          expect(screen.getByTestId('overtime-percent-4')).toHaveTextContent('—');
+          expect(screen.getByTestId('overtime-status-cell-4')).toHaveTextContent('No Data');
+        });
+      });
+
+      it('fetches new overtime data when user switches period dropdown (e.g. to 1 or 6 months)', async () => {
+        render(
+          <MemoryRouter>
+            <Headcount />
+          </MemoryRouter>
+        );
+
+        await waitFor(() => {
+          expect(screen.getByTestId('overtime-period-select')).toBeInTheDocument();
+        });
+
+        const select = screen.getByTestId('overtime-period-select');
+
+        // Change to 1 month
+        fireEvent.change(select, { target: { value: '1' } });
+
+        await waitFor(() => {
+          expect(api.get).toHaveBeenCalledWith('/workforce/overtime?months=1');
+        });
+
+        // Change to 6 months
+        fireEvent.change(select, { target: { value: '6' } });
+
+        await waitFor(() => {
+          expect(api.get).toHaveBeenCalledWith('/workforce/overtime?months=6');
         });
       });
     });

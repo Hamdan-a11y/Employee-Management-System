@@ -703,4 +703,88 @@
   background-color: #ef4444;
 }
 
+/* Overtime Table Cell & Status (Pure Colored Text, No Box) */
+.headcount-overtime-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.headcount-overtime-hours {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.headcount-overtime-days {
+  font-size: 0.725rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.headcount-overtime-percent {
+  font-size: 0.9375rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.headcount-overtime-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 !important;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.headcount-overtime-status .overtime-dot {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-block;
+}
+
+/* Overtime Status Colors: Normal (Emerald), High (Amber), Very High (Red), No Data (Muted Slate) */
+.headcount-overtime-status.status-normal {
+  color: #059669; /* Emerald */
+}
+
+.headcount-overtime-status.status-normal .overtime-dot {
+  background-color: #10b981;
+}
+
+.headcount-overtime-status.status-high {
+  color: #d97706; /* Amber */
+}
+
+.headcount-overtime-status.status-high .overtime-dot {
+  background-color: #f59e0b;
+}
+
+.headcount-overtime-status.status-very-high {
+  color: #dc2626; /* Crisp Red */
+}
+
+.headcount-overtime-status.status-very-high .overtime-dot {
+  background-color: #ef4444;
+}
+
+.headcount-overtime-status.status-no-data {
+  color: #94a3b8; /* Muted Slate */
+}
+
+.headcount-overtime-status.status-no-data .overtime-dot {
+  background-color: #94a3b8;
+}
+
+
 

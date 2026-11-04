@@ -786,6 +786,46 @@ X-CSRF-Token: <csrf_token> (for state-changing requests like POST, PUT, PATCH, D
         }
       }
     },
+    '/workforce/overtime': {
+      get: {
+        tags: ['Workforce'],
+        summary: 'Get department overtime percentage for 1, 3, or 6 months (Admin, HR, Dept Manager)',
+        parameters: [
+          {
+            name: 'months',
+            in: 'query',
+            required: false,
+            schema: { type: 'integer', enum: [1, 3, 6], default: 3 },
+            description: 'Time window in months (1, 3, or 6)'
+          }
+        ],
+        responses: {
+          200: {
+            description: 'List of department overtime metrics',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    properties: {
+                      id: { type: 'integer', example: 1 },
+                      name: { type: 'string', example: 'Engineering' },
+                      attendanceDays: { type: 'integer', example: 120 },
+                      avgDailyHours: { type: 'number', example: 8.6 },
+                      overtimePercent: { type: 'number', example: 7.5 },
+                      status: { type: 'string', enum: ['Normal', 'High', 'Very High', 'No Data'], example: 'High' }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          400: { description: 'Invalid months parameter (must be 1, 3, or 6)' },
+          403: { description: 'Forbidden - Employees have no access' }
+        }
+      }
+    },
     '/dashboard/stats': {
       get: {
         tags: ['Dashboard'],

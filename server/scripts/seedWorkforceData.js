@@ -186,6 +186,62 @@ async function seedWorkforceData() {
     }
     console.log(`✓ Seeded ${leaversToSeed.length} sample leavers with staggered termination dates!`);
 
+    // 5. Seed realistic attendance records for overtime calculations
+    console.log('Seeding workforce attendance records across departments...');
+    const deptAttendanceProfiles = {
+      'Engineering': { avgHours: 8.6, daysCount: 15 },    // (8.6 - 8)/8 * 100 = 7.5% => High
+      'Sales': { avgHours: 9.4, daysCount: 15 },          // (9.4 - 8)/8 * 100 = 17.5% => Very High
+      'Marketing': { avgHours: 8.2, daysCount: 12 },      // (8.2 - 8)/8 * 100 = 2.5% => Normal
+      'Finance': { avgHours: 8.0, daysCount: 14 },        // 0% => Normal
+      'Human Resources': { avgHours: 8.1, daysCount: 12 },// (8.1 - 8)/8 * 100 = 1.3% => Normal
+      'Full Stack': { avgHours: 8.7, daysCount: 14 },     // (8.7 - 8)/8 * 100 = 8.8% => High
+      'AI': { avgHours: 9.6, daysCount: 15 },             // (9.6 - 8)/8 * 100 = 20.0% => Very High
+      'Cybersecurity': { avgHours: 8.9, daysCount: 12 },  // (8.9 - 8)/8 * 100 = 11.3% => High
+      'Database': { avgHours: 7.9, daysCount: 10 },       // 0% => Normal
+      'Backend': { avgHours: 8.8, daysCount: 14 },        // (8.8 - 8)/8 * 100 = 10.0% => High
+      'Web Development': { avgHours: 8.3, daysCount: 10 },// (8.3 - 8)/8 * 100 = 3.8% => Normal
+      'R&D': { avgHours: 8.5, daysCount: 12 },            // (8.5 - 8)/8 * 100 = 6.3% => High
+      'IT': { avgHours: 9.5, daysCount: 14 },             // (9.5 - 8)/8 * 100 = 18.8% => Very High
+      // Product & Design intentionally left empty to verify "No Data" handling
+    };
+
+    let totalAttendanceInserted = 0;
+    for (const [deptName, profile] of Object.entries(deptAttendanceProfiles)) {
+      const deptId = deptMap[deptName];
+      if (!deptId) continue;
+
+      const [deptEmployees] = await connection.query(
+        'SELECT id FROM employees WHERE department_id = ? AND status = "Active" AND deleted_at IS NULL LIMIT 2',
+        [deptId]
+      );
+      if (deptEmployees.length === 0) continue;
+
+      for (const emp of deptEmployees) {
+        for (let d = 1; d <= profile.daysCount; d++) {
+          const checkInHours = 9;
+          const totalHours = profile.avgHours;
+          const checkOutHour = Math.floor(checkInHours + totalHours);
+          const checkOutMinute = Math.round((totalHours % 1) * 60);
+
+          await connection.query(
+            `INSERT INTO attendance (employee_id, date, check_in, check_out, total_hours, status)
+             VALUES (
+               ?, 
+               DATE_SUB(CURDATE(), INTERVAL ? DAY), 
+               DATE_ADD(DATE_SUB(CURDATE(), INTERVAL ? DAY), INTERVAL 9 HOUR),
+               DATE_ADD(DATE_ADD(DATE_SUB(CURDATE(), INTERVAL ? DAY), INTERVAL ? HOUR), INTERVAL ? MINUTE),
+               ?,
+               'Present'
+             )
+             ON DUPLICATE KEY UPDATE check_out = VALUES(check_out), total_hours = VALUES(total_hours)`,
+            [emp.id, d, d, d, checkOutHour, checkOutMinute, totalHours]
+          );
+          totalAttendanceInserted++;
+        }
+      }
+    }
+    console.log(`✓ Seeded/Synchronized ${totalAttendanceInserted} attendance records for overtime planning!`);
+
     console.log('--- Workforce Data Population Completed Successfully! ---');
   } catch (err) {
     console.error('Error seeding workforce data:', err);
