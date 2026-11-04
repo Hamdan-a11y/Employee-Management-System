@@ -145,6 +145,10 @@ const Headcount = () => {
   };
 
   useEffect(() => {
+    document.title = 'Workforce Planning';
+  }, []);
+
+  useEffect(() => {
     if (!isEmployee) {
       fetchHeadcount();
     }
@@ -460,7 +464,7 @@ const Headcount = () => {
         <main className="headcount-main">
           <div className="headcount-error-banner" data-testid="headcount-access-denied">
             <AlertCircle size={18} />
-            <span>Access denied. Regular employees do not have permission to view workforce headcount planning.</span>
+            <span>Access denied. Regular employees do not have permission to view workforce planning.</span>
           </div>
         </main>
       </div>
@@ -476,7 +480,7 @@ const Headcount = () => {
         <header className="headcount-header">
           <div className="headcount-title-group">
             <div className="headcount-title-row">
-              <h1 className="headcount-title">Headcount vs. Approved Headcount</h1>
+              <h1 className="headcount-title">Workforce Planning</h1>
               {canEdit ? (
                 <span className="headcount-scope-pill editable">
                   <ShieldCheck size={12} />
@@ -490,7 +494,7 @@ const Headcount = () => {
               ) : null}
             </div>
             <p className="headcount-subtitle">
-              Monitor department staffing levels, track hiring gaps against approved headcount targets, and update approved numbers inline.
+              Track staffing levels, hiring gaps, attrition, overtime, and leave pressure by department.
             </p>
           </div>
 
@@ -499,8 +503,8 @@ const Headcount = () => {
               onClick={handleRefresh}
               disabled={loading || attritionLoading || overtimeLoading || leaveLoading}
               className="btn btn-secondary"
-              title="Refresh headcount, attrition, overtime, and leave pressure data"
-              aria-label="Refresh headcount data"
+              title="Refresh workforce planning data"
+              aria-label="Refresh workforce planning data"
             >
               <RefreshCw size={15} className={loading || attritionLoading || overtimeLoading || leaveLoading ? 'animate-spin' : ''} />
               <span>Refresh</span>

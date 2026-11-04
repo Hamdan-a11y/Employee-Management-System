@@ -46,10 +46,14 @@ describe('Sidebar Component', () => {
 
     expect(screen.getAllByText('Dashboard')[0]).toBeInTheDocument();
     expect(screen.getAllByText('Departments')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('Workforce Planning')[0]).toBeInTheDocument();
     expect(screen.getAllByText('Employees')[0]).toBeInTheDocument();
     expect(screen.getAllByText('Deleted Archive')[0]).toBeInTheDocument();
     expect(screen.getAllByText('Audit Log')[0]).toBeInTheDocument();
     expect(screen.queryByText('My Profile')).not.toBeInTheDocument();
+
+    const workforceLink = screen.getAllByRole('link', { name: /workforce planning/i })[0];
+    expect(workforceLink).toHaveAttribute('href', '/workforce');
   });
 
   it('renders restricted employee navigation items when user role is employee', () => {
@@ -69,6 +73,7 @@ describe('Sidebar Component', () => {
 
     // Admin-only items must NOT be present
     expect(screen.queryByText('Departments')).not.toBeInTheDocument();
+    expect(screen.queryByText('Workforce Planning')).not.toBeInTheDocument();
     expect(screen.queryByText('Deleted Archive')).not.toBeInTheDocument();
     expect(screen.queryByText('Audit Log')).not.toBeInTheDocument();
   });

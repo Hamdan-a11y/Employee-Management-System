@@ -49,21 +49,15 @@ function App() {
             }
           />
           <Route
-            path="/headcount"
+            path="/workforce"
             element={
               <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
                 <Headcount />
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/workforce/headcount"
-            element={
-              <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
-                <Headcount />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/headcount" element={<Navigate to="/workforce" replace />} />
+          <Route path="/workforce/headcount" element={<Navigate to="/workforce" replace />} />
           <Route
             path="/employees"
             element={

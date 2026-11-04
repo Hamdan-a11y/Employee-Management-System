@@ -100,8 +100,8 @@ const Sidebar = () => {
 
   if (!isEmployee && (isAdmin || isHR || isDeptManager)) {
     navItems.push({
-      to: '/headcount',
-      label: 'Headcount',
+      to: '/workforce',
+      label: 'Workforce Planning',
       icon: TrendingUp,
     });
   }

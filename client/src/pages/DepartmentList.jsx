@@ -163,9 +163,9 @@ const DepartmentList = () => {
           </div>
 
           <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <Link to="/headcount" className="btn btn-secondary" title="View Headcount vs. Approved Headcount">
+            <Link to="/workforce" className="btn btn-secondary" title="View Workforce Planning">
               <TrendingUp size={16} />
-              <span>Headcount Planning</span>
+              <span>Workforce Planning</span>
             </Link>
             <button
               onClick={() => {

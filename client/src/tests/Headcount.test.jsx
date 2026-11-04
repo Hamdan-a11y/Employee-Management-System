@@ -211,7 +211,11 @@ describe('Workforce Headcount vs. Approved Headcount Frontend Tests', () => {
         </MemoryRouter>
       );
 
-      expect(screen.getByText('Headcount vs. Approved Headcount')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: 'Workforce Planning' })).toBeInTheDocument();
+      expect(
+        screen.getByText('Track staffing levels, hiring gaps, attrition, overtime, and leave pressure by department.')
+      ).toBeInTheDocument();
+      expect(document.title).toBe('Workforce Planning');
 
       await waitFor(() => {
         expect(screen.getByText('Approved Target')).toBeInTheDocument();
