@@ -1,19 +1,9 @@
--- ==============================================================================
--- EMPLOYEE MANAGEMENT SYSTEM - COMPLETE SCHEMA & EXTENSIVE SEED DATA
--- ==============================================================================
--- Compatible with standard MySQL 8.0+ and TiDB Cloud
--- Contains full table definitions, constraints, indexes, and rich realistic data
--- ==============================================================================
-
 CREATE DATABASE IF NOT EXISTS employee_db;
 USE employee_db;
 
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
--- ------------------------------------------------------------------------------
--- 1. Departments Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS departments (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(100) NOT NULL UNIQUE,
@@ -21,9 +11,6 @@ CREATE TABLE IF NOT EXISTS departments (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- ------------------------------------------------------------------------------
--- 2. Employees Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS employees (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
@@ -43,9 +30,6 @@ CREATE TABLE IF NOT EXISTS employees (
   INDEX idx_employees_dept (department_id)
 );
 
--- ------------------------------------------------------------------------------
--- 3. Users Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   name VARCHAR(100) NOT NULL,
@@ -62,9 +46,6 @@ CREATE TABLE IF NOT EXISTS users (
   INDEX idx_users_dept (department_id)
 );
 
--- ------------------------------------------------------------------------------
--- 4. Password Resets Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS password_resets (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
@@ -77,9 +58,6 @@ CREATE TABLE IF NOT EXISTS password_resets (
   INDEX idx_user_id (user_id)
 );
 
--- ------------------------------------------------------------------------------
--- 5. Refresh Tokens Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS refresh_tokens (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
@@ -91,9 +69,6 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   INDEX idx_refresh_user (user_id)
 );
 
--- ------------------------------------------------------------------------------
--- 6. Employee Documents Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS employee_documents (
   id INT AUTO_INCREMENT PRIMARY KEY,
   employee_id INT NOT NULL,
@@ -107,9 +82,6 @@ CREATE TABLE IF NOT EXISTS employee_documents (
   INDEX idx_employee_id (employee_id)
 );
 
--- ------------------------------------------------------------------------------
--- 7. Audit Logs Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS audit_logs (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NULL,
@@ -130,9 +102,6 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   INDEX idx_audit_employee_name (employee_name)
 );
 
--- ------------------------------------------------------------------------------
--- 8. Notifications Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS notifications (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
@@ -147,9 +116,6 @@ CREATE TABLE IF NOT EXISTS notifications (
   INDEX idx_notifications_created_at (created_at DESC)
 );
 
--- ------------------------------------------------------------------------------
--- 9. Attendance Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS attendance (
   id INT AUTO_INCREMENT PRIMARY KEY,
   employee_id INT NOT NULL,
@@ -171,9 +137,6 @@ CREATE TABLE IF NOT EXISTS attendance (
   INDEX idx_attendance_status (status)
 );
 
--- ------------------------------------------------------------------------------
--- 10. Attendance Corrections Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS attendance_corrections (
   id INT AUTO_INCREMENT PRIMARY KEY,
   attendance_id INT NULL,
@@ -196,9 +159,6 @@ CREATE TABLE IF NOT EXISTS attendance_corrections (
   INDEX idx_corr_date (date)
 );
 
--- ------------------------------------------------------------------------------
--- 11. Leave Balances Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS leave_balances (
   id INT AUTO_INCREMENT PRIMARY KEY,
   employee_id INT NOT NULL,
@@ -219,9 +179,6 @@ CREATE TABLE IF NOT EXISTS leave_balances (
   UNIQUE KEY unique_emp_year (employee_id, year)
 );
 
--- ------------------------------------------------------------------------------
--- 12. Leave Requests Table
--- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS leave_requests (
   id INT AUTO_INCREMENT PRIMARY KEY,
   employee_id INT NOT NULL,
@@ -242,13 +199,6 @@ CREATE TABLE IF NOT EXISTS leave_requests (
   INDEX idx_leave_dates (start_date, end_date)
 );
 
--- ==============================================================================
--- SEED DATA: EXTENSIVE, REALISTIC DATASET
--- ==============================================================================
-
--- ------------------------------------------------------------------------------
--- A. SEED DEPARTMENTS (16 Departments with diverse targets)
--- ------------------------------------------------------------------------------
 INSERT INTO departments (name, approved_headcount) VALUES
   ('Engineering', 35),
   ('Human Resources', 5),
@@ -268,9 +218,6 @@ INSERT INTO departments (name, approved_headcount) VALUES
   ('Quality Assurance', 5)
 ON DUPLICATE KEY UPDATE approved_headcount = VALUES(approved_headcount);
 
--- ------------------------------------------------------------------------------
--- B. SEED EMPLOYEES (100+ Active Employees across all 16 departments)
--- ------------------------------------------------------------------------------
 INSERT INTO employees (name, email, phone, department_id, designation, status, termination_date, deleted_at) VALUES
   ('Alex Mercer', 'alex.mercer@company.com', '+1-555-0101', (SELECT id FROM departments WHERE name = 'Engineering'), 'Principal Staff Architect', 'Active', NULL, NULL),
   ('Muhammad Hamdan', 'muhammadhumdan43@gmail.com', '+1-555-0102', (SELECT id FROM departments WHERE name = 'Engineering'), 'Senior Cloud Infrastructure Engineer', 'Active', NULL, NULL),
@@ -387,10 +334,6 @@ ON DUPLICATE KEY UPDATE
   termination_date = NULL,
   deleted_at = NULL;
 
--- ------------------------------------------------------------------------------
--- C. SEED TERMINATED EMPLOYEES (12 Leavers with recent termination_date)
--- Generates diverse Attrition Rates across departments
--- ------------------------------------------------------------------------------
 INSERT INTO employees (name, email, phone, department_id, designation, status, termination_date, deleted_at) VALUES
   ('Chloe Former', 'chloe.former@company.com', '+1-555-9001', (SELECT id FROM departments WHERE name = 'Marketing'), 'Marketing Associate', 'Inactive', DATE_SUB(CURDATE(), INTERVAL 2 MONTH), NULL),
   ('Lucas Departed', 'lucas.departed@company.com', '+1-555-9002', (SELECT id FROM departments WHERE name = 'Marketing'), 'Content Specialist', 'Inactive', DATE_SUB(CURDATE(), INTERVAL 5 MONTH), NULL),
@@ -411,9 +354,6 @@ ON DUPLICATE KEY UPDATE
   termination_date = VALUES(termination_date),
   deleted_at = NULL;
 
--- ------------------------------------------------------------------------------
--- D. SEED SOFT-DELETED EMPLOYEES (For Deleted Archive Testing)
--- ------------------------------------------------------------------------------
 INSERT INTO employees (name, email, phone, department_id, designation, status, termination_date, deleted_at) VALUES
   ('Deleted Arthur', 'arthur.deleted@company.com', '+1-555-9901', (SELECT id FROM departments WHERE name = 'Engineering'), 'Old Eng Contractor', 'Inactive', NULL, DATE_SUB(NOW(), INTERVAL 10 DAY)),
   ('Deleted Beatrice', 'beatrice.deleted@company.com', '+1-555-9902', (SELECT id FROM departments WHERE name = 'Sales'), 'Old Sales Rep', 'Inactive', NULL, DATE_SUB(NOW(), INTERVAL 25 DAY)),
@@ -422,40 +362,56 @@ ON DUPLICATE KEY UPDATE
   status = 'Inactive',
   deleted_at = VALUES(deleted_at);
 
--- ------------------------------------------------------------------------------
--- E. SEED CORE USERS (Admin, HR Manager, Department Managers, Employees)
--- Password for all seed users is: Password123!
--- ------------------------------------------------------------------------------
-INSERT INTO users (name, email, password, role, employee_id, department_id) VALUES
-  ('Admin Master', 'admin@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'admin', NULL, NULL),
-  ('Muhammad Hamdan', 'muhammadhumdan43@gmail.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'muhammadhumdan43@gmail.com'), (SELECT id FROM departments WHERE name = 'Engineering')),
-  ('HR Manager', 'hr_manager@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'hr_manager', (SELECT id FROM employees WHERE email = 'sarah.jenkins@company.com'), (SELECT id FROM departments WHERE name = 'Human Resources')),
-  ('Engineering Manager', 'manager_dept1@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', (SELECT id FROM employees WHERE email = 'alex.mercer@company.com'), (SELECT id FROM departments WHERE name = 'Engineering')),
-  ('HR Dept Manager', 'manager_dept2@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', (SELECT id FROM employees WHERE email = 'marcus.vance@company.com'), (SELECT id FROM departments WHERE name = 'Human Resources')),
-  ('Marketing Manager', 'manager_dept3@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', (SELECT id FROM employees WHERE email = 'olivia.martinez@company.com'), (SELECT id FROM departments WHERE name = 'Marketing')),
-  ('Finance Manager', 'manager_dept4@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', (SELECT id FROM employees WHERE email = 'mia.thompson@company.com'), (SELECT id FROM departments WHERE name = 'Finance')),
-  ('Sales Manager', 'manager_dept5@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', (SELECT id FROM employees WHERE email = 'robert.oppen@company.com'), (SELECT id FROM departments WHERE name = 'Sales')),
-  ('Sarah Jenkins', 'sarah.jenkins@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'hr_manager', (SELECT id FROM employees WHERE email = 'sarah.jenkins@company.com'), (SELECT id FROM departments WHERE name = 'Human Resources')),
-  ('Olivia Martinez', 'olivia.martinez@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'olivia.martinez@company.com'), (SELECT id FROM departments WHERE name = 'Marketing')),
-  ('Mia Thompson', 'mia.thompson@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'mia.thompson@company.com'), (SELECT id FROM departments WHERE name = 'Finance')),
-  ('Robert Oppen', 'robert.oppen@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'robert.oppen@company.com'), (SELECT id FROM departments WHERE name = 'Sales')),
-  ('Victor Frank', 'victor.frank@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'victor.frank@company.com'), (SELECT id FROM departments WHERE name = 'Research & Development')),
-  ('Sophie Germain', 'sophie.germain@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'sophie.germain@company.com'), (SELECT id FROM departments WHERE name = 'Frontend Engineering')),
-  ('Jared Dunn', 'jared.dunn@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'jared.dunn@company.com'), (SELECT id FROM departments WHERE name = 'Backend Engineering')),
-  ('Phillip Price', 'phillip.price@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'phillip.price@company.com'), (SELECT id FROM departments WHERE name = 'Database Administration')),
-  ('Geoffrey Hinton', 'geoffrey.hinton@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'geoffrey.hinton@company.com'), (SELECT id FROM departments WHERE name = 'Artificial Intelligence')),
-  ('Bruce Schneier', 'bruce.schneier@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'bruce.schneier@company.com'), (SELECT id FROM departments WHERE name = 'Cybersecurity')),
-  ('Margaret Hamilton', 'margaret.hamilton@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'margaret.hamilton@company.com'), (SELECT id FROM departments WHERE name = 'Quality Assurance'))
-ON DUPLICATE KEY UPDATE
-  name = VALUES(name),
-  password = VALUES(password),
-  role = VALUES(role),
-  employee_id = VALUES(employee_id),
-  department_id = VALUES(department_id);
+INSERT INTO users (name, email, password, role, employee_id, department_id)
+SELECT 'Admin Master', 'admin@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'admin', NULL, NULL
+ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role);
 
--- ------------------------------------------------------------------------------
--- F. SEED LEAVE BALANCES (Populated for all active employees for 2026)
--- ------------------------------------------------------------------------------
+INSERT INTO users (name, email, password, role, employee_id, department_id)
+SELECT 'HR Manager', 'hr_manager@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'hr_manager', e.id, e.department_id
+FROM employees e WHERE e.email = 'sarah.jenkins@company.com'
+ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
+
+INSERT INTO users (name, email, password, role, employee_id, department_id)
+SELECT 'Engineering Manager', 'manager_dept1@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', e.id, e.department_id
+FROM employees e WHERE e.email = 'alex.mercer@company.com'
+ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
+
+INSERT INTO users (name, email, password, role, employee_id, department_id)
+SELECT 'HR Dept Manager', 'manager_dept2@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', e.id, e.department_id
+FROM employees e WHERE e.email = 'marcus.vance@company.com'
+ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
+
+INSERT INTO users (name, email, password, role, employee_id, department_id)
+SELECT 'Marketing Manager', 'manager_dept3@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', e.id, e.department_id
+FROM employees e WHERE e.email = 'olivia.martinez@company.com'
+ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
+
+INSERT INTO users (name, email, password, role, employee_id, department_id)
+SELECT 'Finance Manager', 'manager_dept4@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', e.id, e.department_id
+FROM employees e WHERE e.email = 'mia.thompson@company.com'
+ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
+
+INSERT INTO users (name, email, password, role, employee_id, department_id)
+SELECT 'Sales Manager', 'manager_dept5@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', e.id, e.department_id
+FROM employees e WHERE e.email = 'robert.oppen@company.com'
+ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
+
+INSERT INTO users (name, email, password, role, employee_id, department_id)
+SELECT 'Sarah Jenkins', 'sarah.jenkins@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'hr_manager', e.id, e.department_id
+FROM employees e WHERE e.email = 'sarah.jenkins@company.com'
+ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
+
+INSERT INTO users (name, email, password, role, employee_id, department_id)
+SELECT e.name, e.email, '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', e.id, e.department_id
+FROM employees e
+WHERE e.email IN (
+  'muhammadhumdan43@gmail.com', 'olivia.martinez@company.com', 'mia.thompson@company.com',
+  'robert.oppen@company.com', 'victor.frank@company.com', 'sophie.germain@company.com',
+  'jared.dunn@company.com', 'phillip.price@company.com', 'geoffrey.hinton@company.com',
+  'bruce.schneier@company.com', 'margaret.hamilton@company.com'
+)
+ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
+
 INSERT INTO leave_balances (employee_id, year, annual_total, annual_used, sick_total, sick_used, casual_total, casual_used, maternity_total, maternity_used, paternity_total, paternity_used)
 SELECT
   e.id,
@@ -473,14 +429,6 @@ SELECT
 FROM employees e WHERE e.status = 'Active'
 ON DUPLICATE KEY UPDATE year = VALUES(year);
 
--- ------------------------------------------------------------------------------
--- G. SEED LEAVE REQUESTS (Approved, Pending, and Rejected across departments)
--- Generates diverse Leave Pressure:
---   High (>10%):      Database Administration (~13.5%), Quality Assurance (~15.4%)
---   Medium (5%-10%):  Marketing (~6.2%), Frontend Engineering (~8.7%)
---   Low (<5%):        Engineering, HR, Finance, Sales, Backend, Full Stack, AI, IT, Cyber, Customer Ops
---   Zero:             Product & Design, R&D
--- ------------------------------------------------------------------------------
 INSERT INTO leave_requests (employee_id, leave_type, start_date, end_date, days_count, reason, status, reviewed_by, reviewed_at) VALUES
   ((SELECT id FROM employees WHERE email = 'phillip.price@company.com'), 'Sick', DATE_SUB(CURDATE(), INTERVAL 40 DAY), DATE_SUB(CURDATE(), INTERVAL 21 DAY), 20, 'Post-surgery recovery and rest', 'APPROVED', 1, DATE_SUB(NOW(), INTERVAL 41 DAY)),
   ((SELECT id FROM employees WHERE email = 'whiterose@company.com'), 'Annual', DATE_SUB(CURDATE(), INTERVAL 20 DAY), DATE_SUB(CURDATE(), INTERVAL 6 DAY), 15, 'Family vacation and personal travel', 'APPROVED', 1, DATE_SUB(NOW(), INTERVAL 21 DAY)),
@@ -511,14 +459,6 @@ INSERT INTO leave_requests (employee_id, leave_type, start_date, end_date, days_
   ((SELECT id FROM employees WHERE email = 'tony.stark@company.com'), 'Annual', DATE_SUB(CURDATE(), INTERVAL 20 DAY), DATE_SUB(CURDATE(), INTERVAL 16 DAY), 5, 'Family visit', 'APPROVED', 1, DATE_SUB(NOW(), INTERVAL 21 DAY))
 ;
 
--- ------------------------------------------------------------------------------
--- H. SEED ATTENDANCE DATA (Over 1,500+ records generated across departments)
--- Generates diverse Overtime Statuses:
---   Very High (>15%): Sales (9.75h / 21.9%), AI (9.75h / 21.9%), Cybersecurity (9.75h / 21.9%)
---   High (5%-15%):    Engineering (8.75h / 9.4%), Frontend (8.6h / 7.5%), Backend (8.83h / 10.4%), QA (8.5h / 6.3%)
---   Normal (<5%):     Marketing (8.0h / 0%), Finance (8.0h / 0%), HR (8.17h / 2.1%), Full Stack (8.33h / 4.2%), Database (8.25h / 3.1%), IT (8.0h / 0%), Customer Ops (8.0h / 0%)
---   No Data:          Product & Design (0 records)
--- ------------------------------------------------------------------------------
 INSERT IGNORE INTO attendance (employee_id, date, check_in, check_out, total_hours, is_late, late_minutes, status)
 SELECT
   e.id,
@@ -909,9 +849,6 @@ CROSS JOIN (
 ) cal
 WHERE e.department_id = (SELECT id FROM departments WHERE name = 'Quality Assurance') AND e.status = 'Active';
 
--- ------------------------------------------------------------------------------
--- I. SEED ATTENDANCE CORRECTIONS
--- ------------------------------------------------------------------------------
 INSERT INTO attendance_corrections (attendance_id, employee_id, date, requested_check_in, requested_check_out, reason, status, reviewed_by, reviewed_at)
 SELECT
   a.id,
@@ -925,9 +862,6 @@ SELECT
   NOW()
 FROM attendance a WHERE a.employee_id = (SELECT id FROM employees WHERE email = 'alex.mercer@company.com') LIMIT 1;
 
--- ------------------------------------------------------------------------------
--- J. SEED AUDIT LOGS
--- ------------------------------------------------------------------------------
 INSERT INTO audit_logs (user_id, user_name, user_email, action, entity_type, entity_id, employee_name, details, ip_address, created_at) VALUES
   (1, 'Admin Master', 'admin@example.com', 'CREATE', 'EMPLOYEE', (SELECT id FROM employees WHERE email = 'alex.mercer@company.com'), 'Alex Mercer', 'Created initial principal architect profile', '127.0.0.1', DATE_SUB(NOW(), INTERVAL 60 DAY)),
   (1, 'Admin Master', 'admin@example.com', 'CREATE', 'EMPLOYEE', (SELECT id FROM employees WHERE email = 'muhammadhumdan43@gmail.com'), 'Muhammad Hamdan', 'Created cloud infrastructure engineer profile', '127.0.0.1', DATE_SUB(NOW(), INTERVAL 58 DAY)),
@@ -935,9 +869,6 @@ INSERT INTO audit_logs (user_id, user_name, user_email, action, entity_type, ent
   (3, 'HR Manager', 'hr_manager@example.com', 'UPDATE', 'EMPLOYEE', (SELECT id FROM employees WHERE email = 'olivia.martinez@company.com'), 'Olivia Martinez', 'Updated designation to Head of Growth Marketing', '127.0.0.1', DATE_SUB(NOW(), INTERVAL 20 DAY)),
   (1, 'Admin Master', 'admin@example.com', 'DELETE', 'EMPLOYEE', (SELECT id FROM employees WHERE email = 'arthur.deleted@company.com'), 'Deleted Arthur', 'Archived contractor record upon project completion', '127.0.0.1', DATE_SUB(NOW(), INTERVAL 10 DAY));
 
--- ------------------------------------------------------------------------------
--- K. SEED NOTIFICATIONS
--- ------------------------------------------------------------------------------
 INSERT INTO notifications (user_id, type, title, message, is_read, link, created_at) VALUES
   (1, 'system', 'Workforce Planning Initialized', 'All 16 departments and workforce planning metrics have been successfully seeded.', FALSE, '/workforce', DATE_SUB(NOW(), INTERVAL 1 HOUR)),
   (1, 'account', 'New Staff Onboarded', '100+ active personnel profiles are active and monitored in the directory.', FALSE, '/employees', DATE_SUB(NOW(), INTERVAL 2 HOUR)),
@@ -946,6 +877,3 @@ INSERT INTO notifications (user_id, type, title, message, is_read, link, created
   (1, 'system', 'Engineering Headcount Alert', 'Engineering department currently has open hiring positions.', FALSE, '/workforce', DATE_SUB(NOW(), INTERVAL 4 HOUR));
 
 SET FOREIGN_KEY_CHECKS = 1;
--- ==============================================================================
--- END OF SCHEMA & SEED DATA
--- ==============================================================================
