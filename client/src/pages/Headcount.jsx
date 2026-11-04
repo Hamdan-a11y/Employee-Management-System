@@ -575,7 +575,7 @@ const Headcount = () => {
                         {/* Gap */}
                         <td className="headcount-td numeric">
                           <span data-testid={`gap-val-${dept.id}`}>
-                            {renderGapPill(dept.gap, dept.status)}
+                            {renderGapText(dept.gap, dept.status)}
                           </span>
                         </td>
 
