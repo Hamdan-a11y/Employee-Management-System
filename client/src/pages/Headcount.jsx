@@ -245,7 +245,6 @@ const Headcount = () => {
       </span>
     );
   };
-  };
 
   if (isEmployee) {
     return (
