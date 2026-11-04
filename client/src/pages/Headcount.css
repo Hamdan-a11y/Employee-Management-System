@@ -96,37 +96,36 @@
 }
 
 .headcount-stat-icon {
-  width: 44px;
-  height: 44px;
-  border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  background: transparent !important;
+  border-radius: 0;
 }
 
 .headcount-stat-icon.primary {
-  background: #f1f5f9;
+  background: transparent !important;
   color: #0f172a;
 }
 
 .headcount-stat-icon.blue {
-  background: #eff6ff;
+  background: transparent !important;
   color: #2563eb;
 }
 
 .headcount-stat-icon.amber {
-  background: #fffbeb;
+  background: transparent !important;
   color: #d97706;
 }
 
 .headcount-stat-icon.emerald {
-  background: #ecfdf5;
+  background: transparent !important;
   color: #059669;
 }
 
 .headcount-stat-icon.rose {
-  background: #fef2f2;
+  background: transparent !important;
   color: #dc2626;
 }
 
