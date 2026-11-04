@@ -18,6 +18,7 @@ import DeletedEmployees from './pages/DeletedEmployees';
 import AuditLog from './pages/AuditLog';
 import Attendance from './pages/Attendance';
 import Leaves from './pages/Leaves';
+import Headcount from './pages/Headcount';
 
 function App() {
   return (
@@ -44,6 +45,22 @@ function App() {
             element={
               <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
                 <DepartmentList />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/headcount"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
+                <Headcount />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/workforce/headcount"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
+                <Headcount />
               </ProtectedRoute>
             }
           />

@@ -13,7 +13,8 @@ import {
   CheckCircle,
   X,
   AlertTriangle,
-  ArrowRight
+  ArrowRight,
+  TrendingUp
 } from 'lucide-react';
 import { DepartmentIcon } from '../utils/departmentIcons';
 import { useNotification } from '../context/NotificationContext';
@@ -161,17 +162,23 @@ const DepartmentList = () => {
             </p>
           </div>
 
-          <button
-            onClick={() => {
-              setIsAddOpen(true);
-              setAddName('');
-              setAddError('');
-            }}
-            className="btn btn-primary"
-          >
-            <Plus size={16} />
-            <span>Add Department</span>
-          </button>
+          <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+            <Link to="/headcount" className="btn btn-secondary" title="View Headcount vs. Approved Headcount">
+              <TrendingUp size={16} />
+              <span>Headcount Planning</span>
+            </Link>
+            <button
+              onClick={() => {
+                setIsAddOpen(true);
+                setAddName('');
+                setAddError('');
+              }}
+              className="btn btn-primary"
+            >
+              <Plus size={16} />
+              <span>Add Department</span>
+            </button>
+          </div>
         </div>
 
 

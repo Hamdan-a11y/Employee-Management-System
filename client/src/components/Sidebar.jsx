@@ -12,7 +12,8 @@ import {
   History,
   Archive,
   Clock,
-  Calendar
+  Calendar,
+  TrendingUp
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import './Sidebar.css';
@@ -94,6 +95,14 @@ const Sidebar = () => {
       to: '/departments',
       label: 'Departments',
       icon: Building2,
+    });
+  }
+
+  if (!isEmployee && (isAdmin || isHR || isDeptManager)) {
+    navItems.push({
+      to: '/headcount',
+      label: 'Headcount',
+      icon: TrendingUp,
     });
   }
 
