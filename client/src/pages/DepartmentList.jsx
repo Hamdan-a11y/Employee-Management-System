@@ -16,7 +16,7 @@ import {
   ArrowRight,
   TrendingUp
 } from 'lucide-react';
-import { DepartmentIcon } from '../utils/departmentIcons';
+import { DepartmentIcon, getDepartmentConfig } from '../utils/departmentIcons';
 import { useNotification } from '../context/NotificationContext';
 import './DepartmentList.css';
 
@@ -382,12 +382,37 @@ const DepartmentList = () => {
                       setAddName(e.target.value);
                       if (addError) setAddError('');
                     }}
-                    placeholder="e.g. Research & Development"
+                    placeholder="e.g. Artificial Intelligence, Mobile Apps"
                     autoFocus
                     required
                     maxLength={100}
                     className="input"
                   />
+                  {addName.trim() && (
+                    <div
+                      className="dept-preview-indicator"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        marginTop: '10px',
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        background: 'var(--bg-secondary, #f8fafc)',
+                        border: '1px solid var(--border-color, #e2e8f0)',
+                      }}
+                    >
+                      <DepartmentIcon name={addName} size={18} badgeSize={34} />
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {getDepartmentConfig(addName).label}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          Assigned automatically based on department name
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="modal-actions">
@@ -453,6 +478,31 @@ const DepartmentList = () => {
                     maxLength={100}
                     className="input"
                   />
+                  {editName.trim() && (
+                    <div
+                      className="dept-preview-indicator"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '10px',
+                        marginTop: '10px',
+                        padding: '10px 14px',
+                        borderRadius: '8px',
+                        background: 'var(--bg-secondary, #f8fafc)',
+                        border: '1px solid var(--border-color, #e2e8f0)',
+                      }}
+                    >
+                      <DepartmentIcon name={editName} size={18} badgeSize={34} />
+                      <div style={{ display: 'flex', flexDirection: 'column' }}>
+                        <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {getDepartmentConfig(editName).label}
+                        </span>
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                          Assigned automatically based on department name
+                        </span>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="modal-actions">
