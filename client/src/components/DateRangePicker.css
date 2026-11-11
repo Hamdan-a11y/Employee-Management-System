@@ -1,0 +1,592 @@
+.premium-datepicker-root {
+  position: relative;
+  display: inline-block;
+  user-select: none;
+  font-family: inherit;
+}
+
+/* ------------------------------------------------------------------------------
+   1. The Trigger Button
+   ------------------------------------------------------------------------------ */
+.premium-datepicker-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  padding: 6px 12px 6px 8px;
+  background-color: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  cursor: pointer;
+  transition: all 180ms cubic-bezier(0.16, 1, 0.3, 1);
+  min-height: 38px;
+  max-width: 100%;
+}
+
+.premium-datepicker-trigger:hover {
+  border-color: var(--border-hover, #cbd5e1);
+  box-shadow: 0 2px 6px -1px rgba(15, 23, 42, 0.08);
+  background-color: #fafbfc;
+}
+
+.premium-datepicker-trigger.is-open {
+  border-color: var(--primary, #0f172a);
+  box-shadow: 0 0 0 3px rgba(15, 23, 42, 0.08), 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+
+.premium-datepicker-trigger.has-value {
+  border-color: #cbd5e1;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+}
+
+.premium-trigger-leading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: nowrap;
+}
+
+.premium-calendar-icon-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  background: #f1f5f9;
+  color: var(--primary, #0f172a);
+  transition: all 150ms ease;
+  flex-shrink: 0;
+}
+
+.premium-datepicker-trigger:hover .premium-calendar-icon-chip {
+  background: #e2e8f0;
+}
+
+.premium-datepicker-trigger.has-value .premium-calendar-icon-chip {
+  background: var(--primary, #0f172a);
+  color: #ffffff;
+}
+
+.premium-cal-icon {
+  stroke-width: 2.2px;
+}
+
+.premium-trigger-label {
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary, #475569);
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.premium-trigger-value {
+  font-size: 0.8125rem;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+
+.premium-trigger-value.placeholder {
+  color: var(--text-muted, #94a3b8);
+  font-weight: 400;
+}
+
+.premium-trigger-value.active {
+  color: var(--text-primary, #0f172a);
+  font-weight: 600;
+}
+
+.premium-trigger-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 7px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  border-radius: 9999px;
+  background-color: #e2e8f0;
+  color: #334155;
+  letter-spacing: 0.01em;
+}
+
+.premium-trigger-trailing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.premium-trigger-clear-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  color: var(--text-muted, #94a3b8);
+  background: transparent;
+  transition: all 140ms ease;
+  cursor: pointer;
+}
+
+.premium-trigger-clear-btn:hover {
+  color: #ffffff;
+  background: var(--text-secondary, #475569);
+}
+
+.premium-trigger-chevron {
+  color: var(--text-muted, #94a3b8);
+  transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.premium-trigger-chevron.rotated {
+  transform: rotate(180deg);
+  color: var(--primary, #0f172a);
+}
+
+/* ------------------------------------------------------------------------------
+   2. Floating Popover Card
+   ------------------------------------------------------------------------------ */
+.premium-datepicker-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 1000;
+  animation: premiumPopoverEnter 220ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  transform-origin: top left;
+}
+
+@keyframes premiumPopoverEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.premium-popover-card {
+  display: flex;
+  background: #ffffff;
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  border-radius: 18px;
+  box-shadow: 
+    0 24px 48px -12px rgba(15, 23, 42, 0.16),
+    0 4px 16px -2px rgba(15, 23, 42, 0.06),
+    0 0 0 1px rgba(15, 23, 42, 0.04);
+  overflow: hidden;
+}
+
+/* ------------------------------------------------------------------------------
+   3. Quick Presets Sidebar
+   ------------------------------------------------------------------------------ */
+.premium-popover-presets {
+  width: 145px;
+  background-color: #f8fafc;
+  border-right: 1px solid #f1f5f9;
+  padding: 14px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.premium-presets-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 8px;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #64748b;
+  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 4px;
+}
+
+.premium-presets-icon {
+  color: #3b82f6;
+}
+
+.premium-presets-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.premium-preset-item {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  padding: 6px 10px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #334155;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  transition: all 140ms ease;
+}
+
+.premium-preset-item:hover {
+  background-color: #e2e8f0;
+  color: #0f172a;
+  transform: translateX(2px);
+}
+
+.premium-preset-item:active {
+  transform: scale(0.97);
+}
+
+/* ------------------------------------------------------------------------------
+   4. Calendars Area
+   ------------------------------------------------------------------------------ */
+.premium-popover-calendars-area {
+  display: flex;
+  flex-direction: column;
+}
+
+.premium-calendars-grid {
+  display: flex;
+  padding: 16px 20px 10px;
+  gap: 24px;
+}
+
+.premium-month-pane {
+  width: 252px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Month Navigation Bar */
+.premium-month-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  height: 32px;
+}
+
+.premium-month-title {
+  font-size: 0.875rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+  text-align: center;
+  flex: 1;
+}
+
+.premium-nav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #475569;
+  cursor: pointer;
+  transition: all 140ms ease;
+}
+
+.premium-nav-btn:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #cbd5e1;
+}
+
+.premium-nav-btn:active {
+  transform: scale(0.94);
+}
+
+.premium-year-arrow {
+  font-size: 1rem;
+  line-height: 1;
+  font-weight: 700;
+  padding-bottom: 1px;
+}
+
+.premium-nav-spacer {
+  width: 28px;
+}
+
+/* Weekday Labels */
+.premium-weekdays-row {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  margin-bottom: 6px;
+}
+
+.premium-weekday-label {
+  text-align: center;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #94a3b8;
+  padding: 4px 0;
+}
+
+/* Days Grid & Day Buttons */
+.premium-days-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  row-gap: 2px;
+}
+
+.premium-day-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 34px;
+}
+
+/* Connected range ribbon background */
+.premium-day-wrapper.in-range {
+  background-color: #f1f5f9;
+}
+
+.premium-day-wrapper.range-start {
+  background: linear-gradient(to right, transparent 50%, #f1f5f9 50%);
+}
+
+.premium-day-wrapper.range-end {
+  background: linear-gradient(to left, transparent 50%, #f1f5f9 50%);
+}
+
+.premium-day-wrapper.range-start.range-end {
+  background: transparent;
+}
+
+.premium-day-btn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  border-radius: 9px;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: #1e293b;
+  cursor: pointer;
+  transition: all 120ms ease;
+  z-index: 2;
+}
+
+.premium-day-btn:hover {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+
+.premium-day-btn.outside-month {
+  color: #cbd5e1;
+}
+
+.premium-day-btn.is-today {
+  font-weight: 700;
+  color: #2563eb;
+}
+
+.premium-today-dot {
+  position: absolute;
+  bottom: 3px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background-color: #2563eb;
+}
+
+/* Selected Start and End Pills */
+.premium-day-btn.selected-start,
+.premium-day-btn.selected-end,
+.premium-day-btn.selected-single {
+  background-color: #0f172a !important;
+  color: #ffffff !important;
+  font-weight: 700;
+  box-shadow: 0 4px 10px -2px rgba(15, 23, 42, 0.35);
+  border-radius: 9px;
+}
+
+.premium-day-btn.hovered-end {
+  background-color: #334155;
+  color: #ffffff;
+  border-radius: 9px;
+}
+
+/* ------------------------------------------------------------------------------
+   5. Popover Footer
+   ------------------------------------------------------------------------------ */
+.premium-popover-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 20px;
+  background-color: #fafbfc;
+  border-top: 1px solid #f1f5f9;
+  gap: 16px;
+}
+
+.premium-footer-summary {
+  font-size: 0.8125rem;
+  color: #475569;
+}
+
+.premium-summary-active {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.summary-date-pill {
+  font-weight: 600;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.summary-arrow {
+  color: #94a3b8;
+}
+
+.premium-summary-prompt {
+  color: #64748b;
+  font-style: italic;
+  font-size: 0.75rem;
+}
+
+.premium-summary-empty {
+  color: #94a3b8;
+  font-size: 0.75rem;
+}
+
+.premium-footer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.premium-footer-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 140ms ease;
+  border: 1px solid transparent;
+}
+
+.premium-footer-btn.clear {
+  background: transparent;
+  color: #64748b;
+}
+
+.premium-footer-btn.clear:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.premium-footer-btn.cancel {
+  background: #ffffff;
+  border-color: #e2e8f0;
+  color: #475569;
+}
+
+.premium-footer-btn.cancel:hover {
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.premium-footer-btn.apply {
+  background: #0f172a;
+  color: #ffffff;
+  box-shadow: 0 2px 6px rgba(15, 23, 42, 0.15);
+}
+
+.premium-footer-btn.apply:hover:not(:disabled) {
+  background: #1e293b;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.25);
+  transform: translateY(-1px);
+}
+
+.premium-footer-btn.apply:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------------------------
+   6. Responsive Mobile View
+   ------------------------------------------------------------------------------ */
+@media (max-width: 768px) {
+  .premium-datepicker-popover {
+    position: fixed;
+    top: 50% !important;
+    left: 50% !important;
+    transform: translate(-50%, -50%) !important;
+    width: 92vw;
+    max-width: 360px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  }
+
+  .premium-popover-card {
+    flex-direction: column;
+    border-radius: 16px;
+  }
+
+  .premium-popover-presets {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid #f1f5f9;
+    padding: 8px 12px;
+  }
+
+  .premium-presets-list {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+
+  .premium-preset-item {
+    white-space: nowrap;
+    padding: 4px 8px;
+    font-size: 0.75rem;
+  }
+
+  .hide-on-mobile {
+    display: none !important;
+  }
+
+  .premium-calendars-grid {
+    padding: 12px 14px;
+    justify-content: center;
+  }
+
+  .premium-month-pane {
+    width: 100%;
+  }
+
+  .premium-popover-footer {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 10px 14px;
+  }
+
+  .premium-footer-actions {
+    justify-content: flex-end;
+  }
+}

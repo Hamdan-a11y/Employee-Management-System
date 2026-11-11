@@ -3,6 +3,7 @@ import { Link, useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import Sidebar from '../components/Sidebar';
 import ImportModal from '../components/ImportModal';
+import DateRangePicker from '../components/DateRangePicker';
 import { 
   Search, 
   UserPlus, 
@@ -569,24 +570,13 @@ const EmployeeList = () => {
           {/* Secondary Filter Row: Joining Date Range & Reset Button */}
           <div className="employee-filters-secondary-row">
             <div className="employee-filter-date-group">
-              <div className="employee-date-label">
-                <Calendar size={14} />
-                <span>Joined Date:</span>
-              </div>
-              <input
-                type="date"
-                value={urlStartDate}
-                onChange={(e) => updateParams({ startDate: e.target.value }, true)}
-                className="input employee-date-input"
-                title="From Date"
-              />
-              <span className="employee-date-separator">to</span>
-              <input
-                type="date"
-                value={urlEndDate}
-                onChange={(e) => updateParams({ endDate: e.target.value }, true)}
-                className="input employee-date-input"
-                title="To Date"
+              <DateRangePicker
+                startDate={urlStartDate}
+                endDate={urlEndDate}
+                label="Joined Date:"
+                onChange={({ startDate, endDate }) => {
+                  updateParams({ startDate, endDate }, true);
+                }}
               />
             </div>
 
