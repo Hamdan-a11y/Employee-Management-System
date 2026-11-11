@@ -388,11 +388,12 @@ router.post('/redistribute-hire-dates', requireAdmin, async (req, res) => {
   try {
     await conn.beginTransaction();
 
-    // 1. Create backup table if it doesn't already exist
-    await conn.query(`
-      CREATE TABLE IF NOT EXISTS employees_backup_20261111 AS 
-      SELECT * FROM employees
-    `);
+    // 1. Create backup table if it doesn't already exist (TiDB compliant)
+    await conn.query('CREATE TABLE IF NOT EXISTS employees_backup_20261111 LIKE employees');
+    const [bCnt] = await conn.query('SELECT COUNT(*) as cnt FROM employees_backup_20261111');
+    if (bCnt[0].cnt === 0) {
+      await conn.query('INSERT INTO employees_backup_20261111 SELECT * FROM employees');
+    }
 
     // 2. Fetch all employees
     const [employees] = await conn.query(`
