@@ -529,6 +529,34 @@ router.patch('/requests/:id/approve', requirePermission('leave.manage'), async (
       WHERE id = ?
     `, [req.user.id, requestId]);
 
+    // Check if leave covers a month with a locked payroll run (create adjustment for next payroll)
+    const leaveMonth = formatLocalDate(leaveReq.start_date).slice(0, 7);
+    const [lockedRuns] = await conn.query(
+      'SELECT id, month, working_days FROM payroll_runs WHERE month = ? AND status = "Locked"',
+      [leaveMonth]
+    );
+    if (lockedRuns.length > 0) {
+      const lockedRun = lockedRuns[0];
+      const [salRows] = await conn.query(
+        'SELECT basic_salary FROM employee_salaries WHERE employee_id = ?',
+        [leaveReq.employee_id]
+      );
+      const basic = Number(salRows[0]?.basic_salary) || 0;
+      const wDays = lockedRun.working_days || 22;
+      const dailyRate = wDays > 0 ? Math.round((basic / wDays) * 100) / 100 : 0;
+      
+      const isUnpaid = leaveReq.leave_type === 'Unpaid';
+      const adjAmount = isUnpaid ? -(dailyRate * leaveReq.days_count) : (dailyRate * leaveReq.days_count);
+      const reason = isUnpaid
+        ? `Unpaid leave approved for ${leaveReq.start_date} after ${leaveMonth} payroll was locked. Deducted ${leaveReq.days_count} day(s) pay.`
+        : `${leaveReq.leave_type} leave approved for ${leaveReq.start_date} after ${leaveMonth} payroll was locked. Restored ${leaveReq.days_count} day(s) pay.`;
+
+      await conn.query(`
+        INSERT INTO payroll_adjustments (employee_id, source_month, type, amount, reason, reference_id, status)
+        VALUES (?, ?, 'LEAVE_CHANGE', ?, ?, ?, 'PENDING')
+      `, [leaveReq.employee_id, leaveMonth, adjAmount, reason, requestId]);
+    }
+
     await conn.commit();
 
     const formattedStart = formatLocalDate(leaveReq.start_date);

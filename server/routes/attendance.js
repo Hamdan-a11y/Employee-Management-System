@@ -154,6 +154,14 @@ router.post('/check-in', async (req, res) => {
     }
     const employee = empRows[0];
 
+    // Check if current month's attendance is locked by payroll
+    const [monthLock] = await pool.query(
+      'SELECT id FROM payroll_runs WHERE month = DATE_FORMAT(CURDATE(), "%Y-%m") AND status IN ("Approved", "Locked")'
+    );
+    if (monthLock.length > 0) {
+      return res.status(403).json({ message: 'Attendance records for this month are locked by approved payroll.' });
+    }
+
     // 2. Prevent duplicate check-in for the same date
     const [existing] = await pool.query(
       'SELECT id, check_in, check_out FROM attendance WHERE employee_id = ? AND date = CURDATE()',
@@ -967,6 +975,34 @@ router.patch('/corrections/:id/approve', requirePermission('attendance.manage'),
        WHERE id = ?`,
       [req.user.id, id]
     );
+
+    // If month is locked, create automatic adjustment line in payroll_adjustments
+    const corrMonth = targetDate.slice(0, 7);
+    const [lockedRuns] = await pool.query(
+      'SELECT id, month, working_days FROM payroll_runs WHERE month = ? AND status = "Locked"',
+      [corrMonth]
+    );
+    if (lockedRuns.length > 0) {
+      const lockedRun = lockedRuns[0];
+      const [salRows] = await pool.query(
+        'SELECT basic_salary FROM employee_salaries WHERE employee_id = ?',
+        [correction.employee_id]
+      );
+      const basic = Number(salRows[0]?.basic_salary) || 0;
+      const wDays = lockedRun.working_days || 22;
+      const dailyRate = wDays > 0 ? Math.round((basic / wDays) * 100) / 100 : 0;
+
+      await pool.query(`
+        INSERT INTO payroll_adjustments (employee_id, source_month, type, amount, reason, reference_id, status)
+        VALUES (?, ?, 'ATTENDANCE_CORRECTION', ?, ?, ?, 'PENDING')
+      `, [
+        correction.employee_id,
+        corrMonth,
+        dailyRate,
+        `Attendance correction approved for ${targetDate} after ${corrMonth} payroll was locked. Restored 1 day pay.`,
+        id
+      ]);
+    }
 
     // Notify employee of approval
     notifyEmployeeUser({

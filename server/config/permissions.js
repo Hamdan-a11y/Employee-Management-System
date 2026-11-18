@@ -25,6 +25,13 @@ const PERMISSIONS = {
 
   // Audit Logs
   AUDIT_VIEW: 'audit.view',
+
+  // Payroll & Salary Structure
+  PAYROLL_VIEW: 'payroll.view',
+  PAYROLL_MANAGE: 'payroll.manage',
+  PAYROLL_APPROVE: 'payroll.approve',
+  SALARY_VIEW: 'salary.view',
+  SALARY_MANAGE: 'salary.manage',
 };
 
 const ROLE_PERMISSIONS = {
@@ -43,6 +50,11 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.LEAVE_REQUEST,
     PERMISSIONS.LEAVE_MANAGE,
     PERMISSIONS.AUDIT_VIEW,
+    PERMISSIONS.PAYROLL_VIEW,
+    PERMISSIONS.PAYROLL_MANAGE,
+    PERMISSIONS.PAYROLL_APPROVE,
+    PERMISSIONS.SALARY_VIEW,
+    PERMISSIONS.SALARY_MANAGE,
   ],
 
   department_manager: [

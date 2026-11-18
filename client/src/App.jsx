@@ -19,6 +19,8 @@ import AuditLog from './pages/AuditLog';
 import Attendance from './pages/Attendance';
 import Leaves from './pages/Leaves';
 import Headcount from './pages/Headcount';
+import Payroll from './pages/Payroll';
+import MyPayslips from './pages/MyPayslips';
 
 function App() {
   return (
@@ -119,6 +121,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <Leaves />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/payroll"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager']}>
+                <Payroll />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/my-payslips"
+            element={
+              <ProtectedRoute>
+                <MyPayslips />
               </ProtectedRoute>
             }
           />

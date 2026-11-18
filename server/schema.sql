@@ -362,55 +362,32 @@ ON DUPLICATE KEY UPDATE
   status = 'Inactive',
   deleted_at = VALUES(deleted_at);
 
-INSERT INTO users (name, email, password, role, employee_id, department_id)
-SELECT 'Admin Master', 'admin@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'admin', NULL, NULL
-ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role);
-
-INSERT INTO users (name, email, password, role, employee_id, department_id)
-SELECT 'HR Manager', 'hr_manager@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'hr_manager', e.id, e.department_id
-FROM employees e WHERE e.email = 'sarah.jenkins@company.com'
-ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
-
-INSERT INTO users (name, email, password, role, employee_id, department_id)
-SELECT 'Engineering Manager', 'manager_dept1@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', e.id, e.department_id
-FROM employees e WHERE e.email = 'alex.mercer@company.com'
-ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
-
-INSERT INTO users (name, email, password, role, employee_id, department_id)
-SELECT 'HR Dept Manager', 'manager_dept2@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', e.id, e.department_id
-FROM employees e WHERE e.email = 'marcus.vance@company.com'
-ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
-
-INSERT INTO users (name, email, password, role, employee_id, department_id)
-SELECT 'Marketing Manager', 'manager_dept3@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', e.id, e.department_id
-FROM employees e WHERE e.email = 'olivia.martinez@company.com'
-ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
-
-INSERT INTO users (name, email, password, role, employee_id, department_id)
-SELECT 'Finance Manager', 'manager_dept4@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', e.id, e.department_id
-FROM employees e WHERE e.email = 'mia.thompson@company.com'
-ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
-
-INSERT INTO users (name, email, password, role, employee_id, department_id)
-SELECT 'Sales Manager', 'manager_dept5@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', e.id, e.department_id
-FROM employees e WHERE e.email = 'robert.oppen@company.com'
-ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
-
-INSERT INTO users (name, email, password, role, employee_id, department_id)
-SELECT 'Sarah Jenkins', 'sarah.jenkins@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'hr_manager', e.id, e.department_id
-FROM employees e WHERE e.email = 'sarah.jenkins@company.com'
-ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
-
-INSERT INTO users (name, email, password, role, employee_id, department_id)
-SELECT e.name, e.email, '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', e.id, e.department_id
-FROM employees e
-WHERE e.email IN (
-  'muhammadhumdan43@gmail.com', 'olivia.martinez@company.com', 'mia.thompson@company.com',
-  'robert.oppen@company.com', 'victor.frank@company.com', 'sophie.germain@company.com',
-  'jared.dunn@company.com', 'phillip.price@company.com', 'geoffrey.hinton@company.com',
-  'bruce.schneier@company.com', 'margaret.hamilton@company.com'
-)
-ON DUPLICATE KEY UPDATE name = VALUES(name), password = VALUES(password), role = VALUES(role), employee_id = VALUES(employee_id), department_id = VALUES(department_id);
+INSERT INTO users (name, email, password, role, employee_id, department_id) VALUES
+  ('Admin Master', 'admin@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'admin', NULL, NULL),
+  ('Muhammad Hamdan', 'muhammadhumdan43@gmail.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'muhammadhumdan43@gmail.com'), (SELECT id FROM departments WHERE name = 'Engineering')),
+  ('HR Manager', 'hr_manager@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'hr_manager', (SELECT id FROM employees WHERE email = 'sarah.jenkins@company.com'), (SELECT id FROM departments WHERE name = 'Human Resources')),
+  ('Engineering Manager', 'manager_dept1@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', (SELECT id FROM employees WHERE email = 'alex.mercer@company.com'), (SELECT id FROM departments WHERE name = 'Engineering')),
+  ('HR Dept Manager', 'manager_dept2@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', (SELECT id FROM employees WHERE email = 'marcus.vance@company.com'), (SELECT id FROM departments WHERE name = 'Human Resources')),
+  ('Marketing Manager', 'manager_dept3@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', (SELECT id FROM employees WHERE email = 'olivia.martinez@company.com'), (SELECT id FROM departments WHERE name = 'Marketing')),
+  ('Finance Manager', 'manager_dept4@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', (SELECT id FROM employees WHERE email = 'mia.thompson@company.com'), (SELECT id FROM departments WHERE name = 'Finance')),
+  ('Sales Manager', 'manager_dept5@example.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'department_manager', (SELECT id FROM employees WHERE email = 'robert.oppen@company.com'), (SELECT id FROM departments WHERE name = 'Sales')),
+  ('Sarah Jenkins', 'sarah.jenkins@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'hr_manager', (SELECT id FROM employees WHERE email = 'sarah.jenkins@company.com'), (SELECT id FROM departments WHERE name = 'Human Resources')),
+  ('Olivia Martinez', 'olivia.martinez@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'olivia.martinez@company.com'), (SELECT id FROM departments WHERE name = 'Marketing')),
+  ('Mia Thompson', 'mia.thompson@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'mia.thompson@company.com'), (SELECT id FROM departments WHERE name = 'Finance')),
+  ('Robert Oppen', 'robert.oppen@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'robert.oppen@company.com'), (SELECT id FROM departments WHERE name = 'Sales')),
+  ('Victor Frank', 'victor.frank@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'victor.frank@company.com'), (SELECT id FROM departments WHERE name = 'Research & Development')),
+  ('Sophie Germain', 'sophie.germain@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'sophie.germain@company.com'), (SELECT id FROM departments WHERE name = 'Frontend Engineering')),
+  ('Jared Dunn', 'jared.dunn@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'jared.dunn@company.com'), (SELECT id FROM departments WHERE name = 'Backend Engineering')),
+  ('Phillip Price', 'phillip.price@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'phillip.price@company.com'), (SELECT id FROM departments WHERE name = 'Database Administration')),
+  ('Geoffrey Hinton', 'geoffrey.hinton@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'geoffrey.hinton@company.com'), (SELECT id FROM departments WHERE name = 'Artificial Intelligence')),
+  ('Bruce Schneier', 'bruce.schneier@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'bruce.schneier@company.com'), (SELECT id FROM departments WHERE name = 'Cybersecurity')),
+  ('Margaret Hamilton', 'margaret.hamilton@company.com', '$2b$10$zVe8TO0S9VsOcHTmwJZFAu54Gc2GAl/BqrTXF2h2.NViuumf7amUK', 'employee', (SELECT id FROM employees WHERE email = 'margaret.hamilton@company.com'), (SELECT id FROM departments WHERE name = 'Quality Assurance'))
+ON DUPLICATE KEY UPDATE
+  name = VALUES(name),
+  password = VALUES(password),
+  role = VALUES(role),
+  employee_id = VALUES(employee_id),
+  department_id = VALUES(department_id);
 
 INSERT INTO leave_balances (employee_id, year, annual_total, annual_used, sick_total, sick_used, casual_total, casual_used, maternity_total, maternity_used, paternity_total, paternity_used)
 SELECT
@@ -875,5 +852,140 @@ INSERT INTO notifications (user_id, type, title, message, is_read, link, created
   (2, 'security', 'Password Security Confirmed', 'Your EMS account credentials are verified with bcrypt encryption.', TRUE, '/attendance', DATE_SUB(NOW(), INTERVAL 1 DAY)),
   (3, 'profile', 'Leave Requests Pending Review', 'New time-off requests are awaiting HR review in the portal.', FALSE, '/leaves', DATE_SUB(NOW(), INTERVAL 3 HOUR)),
   (1, 'system', 'Engineering Headcount Alert', 'Engineering department currently has open hiring positions.', FALSE, '/workforce', DATE_SUB(NOW(), INTERVAL 4 HOUR));
+
+-- ==========================================
+-- PAYROLL & PAYSLIPS TABLES
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS holidays (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  date DATE NOT NULL UNIQUE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_holidays_date (date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS payroll_settings (
+  id INT PRIMARY KEY DEFAULT 1,
+  late_arrival_threshold INT NOT NULL DEFAULT 3,
+  late_deduction_days DECIMAL(4, 2) NOT NULL DEFAULT 1.00,
+  overtime_multiplier DECIMAL(4, 2) NOT NULL DEFAULT 1.50,
+  standard_daily_hours DECIMAL(4, 2) NOT NULL DEFAULT 8.00,
+  currency VARCHAR(10) NOT NULL DEFAULT 'PKR',
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS employee_salaries (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  employee_id INT NOT NULL UNIQUE,
+  basic_salary DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  allowances DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  fixed_deductions DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  effective_date DATE NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+  INDEX idx_sal_eff_date (effective_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS payroll_runs (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  month VARCHAR(7) NOT NULL UNIQUE,
+  status ENUM('Draft', 'Approved', 'Locked') NOT NULL DEFAULT 'Draft',
+  working_days INT NOT NULL DEFAULT 0,
+  total_employees INT NOT NULL DEFAULT 0,
+  total_gross DECIMAL(14, 2) NOT NULL DEFAULT 0.00,
+  total_deductions DECIMAL(14, 2) NOT NULL DEFAULT 0.00,
+  total_net DECIMAL(14, 2) NOT NULL DEFAULT 0.00,
+  warnings_count INT NOT NULL DEFAULT 0,
+  warnings_acknowledged BOOLEAN NOT NULL DEFAULT FALSE,
+  warnings_acknowledged_by INT NULL,
+  warnings_acknowledged_at DATETIME NULL,
+  created_by INT NOT NULL,
+  approved_by INT NULL,
+  approved_at DATETIME NULL,
+  locked_by INT NULL,
+  locked_at DATETIME NULL,
+  notes TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (created_by) REFERENCES users(id),
+  FOREIGN KEY (approved_by) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (locked_by) REFERENCES users(id) ON DELETE SET NULL,
+  FOREIGN KEY (warnings_acknowledged_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_run_status (status),
+  INDEX idx_run_month (month)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS payslips (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  payroll_run_id INT NOT NULL,
+  employee_id INT NOT NULL,
+  month VARCHAR(7) NOT NULL,
+  status ENUM('Draft', 'Approved', 'Locked') NOT NULL DEFAULT 'Draft',
+  basic_salary DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  daily_rate DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  hourly_rate DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  working_days_in_month INT NOT NULL DEFAULT 0,
+  payable_days DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+  prorated_basic DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  allowances DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  overtime_hours DECIMAL(6, 2) NOT NULL DEFAULT 0.00,
+  overtime_multiplier DECIMAL(4, 2) NOT NULL DEFAULT 1.50,
+  overtime_pay DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  fixed_deductions DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  unpaid_leave_days DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+  unpaid_leave_deduction DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  absent_days INT NOT NULL DEFAULT 0,
+  absence_deduction DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  late_arrivals_count INT NOT NULL DEFAULT 0,
+  late_deduction_days DECIMAL(5, 2) NOT NULL DEFAULT 0.00,
+  late_deduction_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  adjustments_amount DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  gross_pay DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  total_deductions DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  net_pay DECIMAL(12, 2) NOT NULL DEFAULT 0.00,
+  warnings JSON NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (payroll_run_id) REFERENCES payroll_runs(id) ON DELETE CASCADE,
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+  UNIQUE KEY unique_run_emp (payroll_run_id, employee_id),
+  INDEX idx_payslips_emp_month (employee_id, month),
+  INDEX idx_payslips_status (status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS payslip_items (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  payslip_id INT NOT NULL,
+  category ENUM('EARNING', 'DEDUCTION', 'ADJUSTMENT') NOT NULL,
+  type VARCHAR(50) NOT NULL,
+  description VARCHAR(255) NOT NULL,
+  amount DECIMAL(12, 2) NOT NULL,
+  rate DECIMAL(12, 2) NULL,
+  quantity DECIMAL(6, 2) NULL,
+  related_entity_type VARCHAR(50) NULL,
+  related_entity_ids JSON NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (payslip_id) REFERENCES payslips(id) ON DELETE CASCADE,
+  INDEX idx_items_payslip (payslip_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS payroll_adjustments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  employee_id INT NOT NULL,
+  source_month VARCHAR(7) NOT NULL,
+  target_payroll_run_id INT NULL,
+  type ENUM('ATTENDANCE_CORRECTION', 'LEAVE_CHANGE', 'MANUAL') NOT NULL,
+  amount DECIMAL(12, 2) NOT NULL,
+  reason TEXT NOT NULL,
+  reference_id INT NULL,
+  status ENUM('PENDING', 'APPLIED') DEFAULT 'PENDING',
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  applied_at DATETIME NULL,
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+  FOREIGN KEY (target_payroll_run_id) REFERENCES payroll_runs(id) ON DELETE SET NULL,
+  INDEX idx_adj_emp_status (employee_id, status)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 SET FOREIGN_KEY_CHECKS = 1;

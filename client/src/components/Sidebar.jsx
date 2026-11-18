@@ -13,7 +13,9 @@ import {
   Archive,
   Clock,
   Calendar,
-  TrendingUp
+  TrendingUp,
+  DollarSign,
+  FileText
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import './Sidebar.css';
@@ -134,6 +136,20 @@ const Sidebar = () => {
       icon: Calendar,
     }
   );
+
+  if (isAdmin || isHR) {
+    navItems.push({
+      to: '/payroll',
+      label: 'Payroll',
+      icon: DollarSign,
+    });
+  }
+
+  navItems.push({
+    to: '/my-payslips',
+    label: 'My Payslips',
+    icon: FileText,
+  });
 
   if (isAdmin) {
     navItems.push({
