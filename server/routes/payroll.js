@@ -654,9 +654,26 @@ router.post('/runs/generate', requirePermission('payroll.manage'), async (req, r
 
     const payrollRunId = runResult.insertId;
 
-    // 12. Insert Payslips and Payslip Items
+    // 12. Bulk Insert Payslips (optimized for cloud / serverless latency)
+    const psPlaceholders = [];
+    const psValues = [];
     for (const ps of computedPayslips) {
-      const [psResult] = await conn.query(`
+      psPlaceholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      psValues.push(
+        payrollRunId, ps.employee_id, month, 'Draft',
+        ps.basic_salary, ps.daily_rate, ps.hourly_rate,
+        ps.working_days_in_month, ps.payable_days, ps.prorated_basic,
+        ps.allowances, ps.overtime_hours, ps.overtime_multiplier, ps.overtime_pay,
+        ps.fixed_deductions, ps.unpaid_leave_days, ps.unpaid_leave_deduction,
+        ps.absent_days, ps.absence_deduction,
+        ps.late_arrivals_count, ps.late_deduction_days, ps.late_deduction_amount,
+        ps.adjustments_amount, ps.gross_pay, ps.total_deductions, ps.net_pay,
+        JSON.stringify(ps.warnings)
+      );
+    }
+
+    if (psPlaceholders.length > 0) {
+      await conn.query(`
         INSERT INTO payslips (
           payroll_run_id, employee_id, month, status,
           basic_salary, daily_rate, hourly_rate,
@@ -667,45 +684,43 @@ router.post('/runs/generate', requirePermission('payroll.manage'), async (req, r
           late_arrivals_count, late_deduction_days, late_deduction_amount,
           adjustments_amount, gross_pay, total_deductions, net_pay,
           warnings
-        ) VALUES (
-          ?, ?, ?, 'Draft',
-          ?, ?, ?,
-          ?, ?, ?,
-          ?, ?, ?, ?,
-          ?, ?, ?,
-          ?, ?,
-          ?, ?, ?,
-          ?, ?, ?, ?,
-          ?
-        )
-      `, [
-        payrollRunId, ps.employee_id, month,
-        ps.basic_salary, ps.daily_rate, ps.hourly_rate,
-        ps.working_days_in_month, ps.payable_days, ps.prorated_basic,
-        ps.allowances, ps.overtime_hours, ps.overtime_multiplier, ps.overtime_pay,
-        ps.fixed_deductions, ps.unpaid_leave_days, ps.unpaid_leave_deduction,
-        ps.absent_days, ps.absence_deduction,
-        ps.late_arrivals_count, ps.late_deduction_days, ps.late_deduction_amount,
-        ps.adjustments_amount, ps.gross_pay, ps.total_deductions, ps.net_pay,
-        JSON.stringify(ps.warnings)
-      ]);
+        ) VALUES ${psPlaceholders.join(', ')}
+      `, psValues);
+    }
 
-      const payslipId = psResult.insertId;
+    // Retrieve generated payslip IDs for bulk item mapping
+    const [insertedPayslips] = await conn.query(
+      'SELECT id, employee_id FROM payslips WHERE payroll_run_id = ?',
+      [payrollRunId]
+    );
+    const empToPayslipId = new Map();
+    insertedPayslips.forEach(row => empToPayslipId.set(row.employee_id, row.id));
 
-      // Insert line items
+    // 13. Bulk Insert Payslip Line Items
+    const itemPlaceholders = [];
+    const itemValues = [];
+    for (const ps of computedPayslips) {
+      const payslipId = empToPayslipId.get(ps.employee_id);
+      if (!payslipId) continue;
+
       for (const item of ps.lineItems) {
-        await conn.query(`
-          INSERT INTO payslip_items (
-            payslip_id, category, type, description,
-            amount, rate, quantity, related_entity_type, related_entity_ids
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `, [
+        itemPlaceholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        itemValues.push(
           payslipId, item.category, item.type, item.description,
           item.amount, item.rate, item.quantity,
           item.related_entity_type || null,
           item.related_entity_ids ? JSON.stringify(item.related_entity_ids) : null
-        ]);
+        );
       }
+    }
+
+    if (itemPlaceholders.length > 0) {
+      await conn.query(`
+        INSERT INTO payslip_items (
+          payslip_id, category, type, description,
+          amount, rate, quantity, related_entity_type, related_entity_ids
+        ) VALUES ${itemPlaceholders.join(', ')}
+      `, itemValues);
     }
 
     // Link pending adjustments to this payroll run

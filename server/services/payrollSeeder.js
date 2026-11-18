@@ -153,8 +153,26 @@ async function seedDefaultRuns(executor = pool) {
 
       const runId = runRes.insertId;
 
+      // Bulk insert payslips
+      const psPlaceholders = [];
+      const psValues = [];
       for (const ps of computed) {
-        const [psRes] = await executor.query(`
+        psPlaceholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        psValues.push(
+          runId, ps.employee_id, month, status,
+          ps.basic_salary, ps.daily_rate, ps.hourly_rate,
+          ps.working_days_in_month, ps.payable_days, ps.prorated_basic,
+          ps.allowances, ps.overtime_hours, ps.overtime_multiplier, ps.overtime_pay,
+          ps.fixed_deductions, ps.unpaid_leave_days, ps.unpaid_leave_deduction,
+          ps.absent_days, ps.absence_deduction,
+          ps.late_arrivals_count, ps.late_deduction_days, ps.late_deduction_amount,
+          ps.adjustments_amount, ps.gross_pay, ps.total_deductions, ps.net_pay,
+          JSON.stringify(ps.warnings)
+        );
+      }
+
+      if (psPlaceholders.length > 0) {
+        await executor.query(`
           INSERT INTO payslips (
             payroll_run_id, employee_id, month, status,
             basic_salary, daily_rate, hourly_rate,
@@ -165,44 +183,42 @@ async function seedDefaultRuns(executor = pool) {
             late_arrivals_count, late_deduction_days, late_deduction_amount,
             adjustments_amount, gross_pay, total_deductions, net_pay,
             warnings
-          ) VALUES (
-            ?, ?, ?, ?,
-            ?, ?, ?,
-            ?, ?, ?,
-            ?, ?, ?, ?,
-            ?, ?, ?,
-            ?, ?,
-            ?, ?, ?,
-            ?, ?, ?, ?,
-            ?
-          )
-        `, [
-          runId, ps.employee_id, month, status,
-          ps.basic_salary, ps.daily_rate, ps.hourly_rate,
-          ps.working_days_in_month, ps.payable_days, ps.prorated_basic,
-          ps.allowances, ps.overtime_hours, ps.overtime_multiplier, ps.overtime_pay,
-          ps.fixed_deductions, ps.unpaid_leave_days, ps.unpaid_leave_deduction,
-          ps.absent_days, ps.absence_deduction,
-          ps.late_arrivals_count, ps.late_deduction_days, ps.late_deduction_amount,
-          ps.adjustments_amount, ps.gross_pay, ps.total_deductions, ps.net_pay,
-          JSON.stringify(ps.warnings)
-        ]);
+          ) VALUES ${psPlaceholders.join(', ')}
+        `, psValues);
+      }
 
-        const payslipId = psRes.insertId;
+      // Map employee_id to payslip id
+      const [inserted] = await executor.query(
+        'SELECT id, employee_id FROM payslips WHERE payroll_run_id = ?',
+        [runId]
+      );
+      const empToId = new Map();
+      inserted.forEach(row => empToId.set(row.employee_id, row.id));
 
+      // Bulk insert line items
+      const itemPlaceholders = [];
+      const itemValues = [];
+      for (const ps of computed) {
+        const payslipId = empToId.get(ps.employee_id);
+        if (!payslipId) continue;
         for (const item of ps.lineItems) {
-          await executor.query(`
-            INSERT INTO payslip_items (
-              payslip_id, category, type, description,
-              amount, rate, quantity, related_entity_type, related_entity_ids
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `, [
+          itemPlaceholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?)');
+          itemValues.push(
             payslipId, item.category, item.type, item.description,
             item.amount, item.rate, item.quantity,
             item.related_entity_type || null,
             item.related_entity_ids ? JSON.stringify(item.related_entity_ids) : null
-          ]);
+          );
         }
+      }
+
+      if (itemPlaceholders.length > 0) {
+        await executor.query(`
+          INSERT INTO payslip_items (
+            payslip_id, category, type, description,
+            amount, rate, quantity, related_entity_type, related_entity_ids
+          ) VALUES ${itemPlaceholders.join(', ')}
+        `, itemValues);
       }
     }
 
