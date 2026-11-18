@@ -184,27 +184,23 @@ async function migratePayroll() {
     `);
 
     // 8. Add is_locked to attendance table if not exists
-    const [attColumns] = await conn.query(`
-      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'attendance' AND COLUMN_NAME = 'is_locked';
-    `);
-    if (attColumns.length === 0) {
+    try {
       await conn.query(`
         ALTER TABLE attendance ADD COLUMN is_locked BOOLEAN NOT NULL DEFAULT FALSE;
       `);
       console.log('Added is_locked column to attendance table.');
+    } catch (e) {
+      // Column already exists (ignore ER_DUP_FIELDNAME)
     }
 
     // 9. Add joining_date to employees table if not exists (fallback to DATE(created_at))
-    const [empColumns] = await conn.query(`
-      SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS
-      WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'employees' AND COLUMN_NAME = 'joining_date';
-    `);
-    if (empColumns.length === 0) {
+    try {
       await conn.query(`
         ALTER TABLE employees ADD COLUMN joining_date DATE NULL DEFAULT NULL;
       `);
       console.log('Added joining_date column to employees table.');
+    } catch (e) {
+      // Column already exists (ignore ER_DUP_FIELDNAME)
     }
 
     // 10. Seed default salaries for existing active employees if none exist
@@ -239,6 +235,10 @@ async function migratePayroll() {
       }
       console.log(`Seeded initial salaries for ${employees.length} employees.`);
     }
+
+    // 11. Seed default live runs if payroll_runs is empty
+    const { seedDefaultRuns } = require('./services/payrollSeeder');
+    await seedDefaultRuns(conn);
 
     await conn.commit();
     console.log('--- Payroll Migration Completed Successfully ---');

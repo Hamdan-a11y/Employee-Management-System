@@ -13,6 +13,45 @@ const {
   calculateEmployeePayslip
 } = require('../services/payrollCalculator');
 
+let isMigrated = false;
+async function ensurePayrollTables() {
+  if (isMigrated) return;
+  try {
+    const [rows] = await pool.query("SHOW TABLES LIKE 'payroll_runs'");
+    if (rows.length === 0) {
+      console.log('[Payroll] Payroll tables missing in database. Auto-running migration...');
+      const migratePayroll = require('../migrate_payroll');
+      await migratePayroll();
+      const { seedDefaultRuns } = require('../services/payrollSeeder');
+      await seedDefaultRuns();
+      console.log('[Payroll] Auto-migration and initial seed completed.');
+    }
+    isMigrated = true;
+  } catch (err) {
+    console.error('[Payroll] Failed to check/migrate tables:', err.message);
+  }
+}
+
+// Auto-ensure tables exist before handling any payroll route
+router.use(async (req, res, next) => {
+  await ensurePayrollTables();
+  next();
+});
+
+// Explicit endpoint to trigger database migration & initial seeding if needed
+router.all('/init-database', async (req, res) => {
+  try {
+    const migratePayroll = require('../migrate_payroll');
+    await migratePayroll();
+    const { seedDefaultRuns } = require('../services/payrollSeeder');
+    await seedDefaultRuns();
+    isMigrated = true;
+    res.json({ success: true, message: 'Payroll tables created and live runs seeded successfully!' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Protect all payroll routes with token authentication
 router.use(authenticateToken);
 
