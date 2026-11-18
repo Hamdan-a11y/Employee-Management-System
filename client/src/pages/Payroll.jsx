@@ -17,7 +17,10 @@ import {
   Eye,
   Check,
   ShieldCheck,
-  Info
+  Info,
+  ChevronDown,
+  ChevronUp,
+  AlertCircle
 } from 'lucide-react';
 import './Payroll.css';
 
@@ -46,6 +49,10 @@ export default function Payroll() {
   const [selectedPayslip, setSelectedPayslip] = useState(null);
   const [payslipDetails, setPayslipDetails] = useState(null);
   const [modalLoading, setModalLoading] = useState(false);
+
+  // Pre-Approval Audit & Warnings UI state
+  const [activeWarningFilter, setActiveWarningFilter] = useState('ALL');
+  const [warningsExpanded, setWarningsExpanded] = useState(false);
 
   // Salary Management Modal
   const [showSalaryModal, setShowSalaryModal] = useState(false);
@@ -296,11 +303,34 @@ export default function Payroll() {
       p.warnings.forEach(w => {
         allWarnings.push({
           employee_name: p.employee_name,
+          employee_id: p.employee_id,
+          employee_email: p.employee_email,
+          designation: p.designation,
+          department_name: p.department_name,
+          payslip: p,
           ...w
         });
       });
     }
   });
+
+  const missingAttendanceCount = allWarnings.filter(w => w.type === 'MISSING_ATTENDANCE').length;
+  const salaryVarianceCount = allWarnings.filter(w => w.type === 'SALARY_VARIANCE').length;
+  const negativePayCount = allWarnings.filter(w => w.type === 'NEGATIVE_OR_ZERO_NET_PAY').length;
+  const noSalaryCount = allWarnings.filter(w => w.type === 'NO_SALARY_SET').length;
+
+  const filteredWarnings = activeWarningFilter === 'ALL'
+    ? allWarnings
+    : allWarnings.filter(w => w.type === activeWarningFilter);
+
+  const handleInspectFromWarning = (w) => {
+    if (w.payslip) {
+      handleOpenPayslipModal(w.payslip);
+    } else {
+      const target = payslips.find(p => p.employee_id === w.employee_id);
+      if (target) handleOpenPayslipModal(target);
+    }
+  };
 
   const isCreator = runData?.created_by === user?.id;
 
@@ -333,20 +363,30 @@ export default function Payroll() {
 
           {/* Alerts */}
           {errorMsg && (
-            <div className="payroll-warning-banner" style={{ background: '#fef2f2', borderColor: '#fee2e2', borderLeftColor: '#ef4444' }}>
-              <div className="warning-title" style={{ color: '#991b1b' }}>
-                <AlertTriangle size={18} />
-                {errorMsg}
+            <div className="payroll-alert-card alert-error">
+              <div className="alert-card-icon">
+                <AlertCircle size={16} />
               </div>
+              <div className="alert-card-content">
+                <span>{errorMsg}</span>
+              </div>
+              <button className="alert-card-close" onClick={() => setErrorMsg('')} title="Dismiss">
+                <X size={14} />
+              </button>
             </div>
           )}
 
           {successMsg && (
-            <div className="payroll-warning-banner" style={{ background: '#ecfdf5', borderColor: '#d1fae5', borderLeftColor: '#10b981' }}>
-              <div className="warning-title" style={{ color: '#065f46' }}>
-                <CheckCircle2 size={18} />
-                {successMsg}
+            <div className="payroll-alert-card alert-success">
+              <div className="alert-card-icon">
+                <CheckCircle2 size={16} />
               </div>
+              <div className="alert-card-content">
+                <span>{successMsg}</span>
+              </div>
+              <button className="alert-card-close" onClick={() => setSuccessMsg('')} title="Dismiss">
+                <X size={14} />
+              </button>
             </div>
           )}
 
@@ -471,38 +511,185 @@ export default function Payroll() {
             </div>
           </div>
 
-          {/* Warnings Banner if any */}
+          {/* Pre-Approval Audit & Flagged Exceptions Card */}
           {allWarnings.length > 0 && (
-            <div className="payroll-warning-banner">
-              <div className="warning-banner-top">
-                <div className="warning-title">
-                  <AlertTriangle size={18} />
-                  <span>
-                    Pre-Approval Warnings ({allWarnings.length}): Review before approving
-                  </span>
-                </div>
-                {runData?.status === 'Draft' && (
-                  <div>
-                    {runData.warnings_acknowledged ? (
-                      <span style={{ fontSize: '0.8rem', color: '#065f46', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
-                        <CheckCircle2 size={14} /> Warnings Acknowledged by {runData.warnings_acknowledged_by_name || 'HR'}
-                      </span>
-                    ) : (
-                      <button className="btn-warning-ems" style={{ padding: '4px 10px', fontSize: '0.75rem' }} onClick={handleAcknowledgeWarnings}>
-                        Acknowledge Warnings
-                      </button>
-                    )}
+            <div className="payroll-audit-card">
+              <div className="audit-header">
+                <div className="audit-header-left">
+                  <div className="audit-icon-box">
+                    <AlertTriangle size={18} />
                   </div>
+                  <div>
+                    <div className="audit-title-row">
+                      <h3 className="audit-title">Pre-Approval Audit Exceptions</h3>
+                      <span className="audit-count-pill">{allWarnings.length} flagged</span>
+                    </div>
+                    <p className="audit-subtitle">
+                      Review flagged employee calculations before payroll approval. Attendance records lock upon approval.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="audit-header-right">
+                  {runData?.status === 'Draft' && (
+                    <>
+                      {runData.warnings_acknowledged ? (
+                        <div className="audit-ack-badge">
+                          <CheckCircle2 size={14} />
+                          <span>Acknowledged by {runData.warnings_acknowledged_by_name || 'Admin'}</span>
+                        </div>
+                      ) : (
+                        <button
+                          className="btn-audit-ack"
+                          onClick={handleAcknowledgeWarnings}
+                          disabled={actionLoading}
+                        >
+                          <Check size={14} />
+                          <span>Acknowledge All ({allWarnings.length})</span>
+                        </button>
+                      )}
+                    </>
+                  )}
+                  {runData?.status !== 'Draft' && (
+                    <div className="audit-ack-badge resolved">
+                      <CheckCircle2 size={14} />
+                      <span>Audit Cleared on {runData?.status}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Category Filter Pills */}
+              <div className="audit-tabs">
+                <button
+                  type="button"
+                  className={`audit-tab-pill ${activeWarningFilter === 'ALL' ? 'active' : ''}`}
+                  onClick={() => setActiveWarningFilter('ALL')}
+                >
+                  All Exceptions <span className="tab-pill-count">{allWarnings.length}</span>
+                </button>
+                {missingAttendanceCount > 0 && (
+                  <button
+                    type="button"
+                    className={`audit-tab-pill ${activeWarningFilter === 'MISSING_ATTENDANCE' ? 'active' : ''}`}
+                    onClick={() => setActiveWarningFilter('MISSING_ATTENDANCE')}
+                  >
+                    Attendance Gaps <span className="tab-pill-count">{missingAttendanceCount}</span>
+                  </button>
+                )}
+                {salaryVarianceCount > 0 && (
+                  <button
+                    type="button"
+                    className={`audit-tab-pill ${activeWarningFilter === 'SALARY_VARIANCE' ? 'active' : ''}`}
+                    onClick={() => setActiveWarningFilter('SALARY_VARIANCE')}
+                  >
+                    Salary Variance <span className="tab-pill-count">{salaryVarianceCount}</span>
+                  </button>
+                )}
+                {negativePayCount > 0 && (
+                  <button
+                    type="button"
+                    className={`audit-tab-pill ${activeWarningFilter === 'NEGATIVE_OR_ZERO_NET_PAY' ? 'active' : ''}`}
+                    onClick={() => setActiveWarningFilter('NEGATIVE_OR_ZERO_NET_PAY')}
+                  >
+                    Net Pay ≤ 0 <span className="tab-pill-count">{negativePayCount}</span>
+                  </button>
+                )}
+                {noSalaryCount > 0 && (
+                  <button
+                    type="button"
+                    className={`audit-tab-pill ${activeWarningFilter === 'NO_SALARY_SET' ? 'active' : ''}`}
+                    onClick={() => setActiveWarningFilter('NO_SALARY_SET')}
+                  >
+                    No Salary Set <span className="tab-pill-count">{noSalaryCount}</span>
+                  </button>
                 )}
               </div>
-              <ul className="warning-list">
-                {allWarnings.map((w, idx) => (
-                  <li key={idx}>
-                    <span className="warning-bullet">•</span>
-                    <strong>{w.employee_name}:</strong> {w.message}
-                  </li>
-                ))}
-              </ul>
+
+              {/* Exception Items List */}
+              <div className={`audit-list-container ${warningsExpanded ? 'expanded' : ''}`}>
+                {filteredWarnings.slice(0, warningsExpanded ? undefined : 4).map((w, idx) => {
+                  const initials = (w.employee_name || 'EM')
+                    .split(' ')
+                    .filter(Boolean)
+                    .slice(0, 2)
+                    .map(p => p[0])
+                    .join('')
+                    .toUpperCase();
+
+                  const badgeClass =
+                    w.type === 'MISSING_ATTENDANCE'
+                      ? 'audit-tag-attendance'
+                      : w.type === 'SALARY_VARIANCE'
+                      ? 'audit-tag-variance'
+                      : w.type === 'NEGATIVE_OR_ZERO_NET_PAY'
+                      ? 'audit-tag-danger'
+                      : 'audit-tag-neutral';
+
+                  const badgeLabel =
+                    w.type === 'MISSING_ATTENDANCE'
+                      ? 'Attendance Gap'
+                      : w.type === 'SALARY_VARIANCE'
+                      ? 'Variance >20%'
+                      : w.type === 'NEGATIVE_OR_ZERO_NET_PAY'
+                      ? 'Net Pay ≤ 0'
+                      : w.type === 'NO_SALARY_SET'
+                      ? 'No Salary'
+                      : 'Flagged';
+
+                  return (
+                    <div key={idx} className="audit-item-row">
+                      <div className="audit-item-left">
+                        <span className="audit-emp-avatar">{initials}</span>
+                        <div className="audit-emp-info">
+                          <span className="audit-emp-name">{w.employee_name}</span>
+                          <span className={`audit-badge ${badgeClass}`}>{badgeLabel}</span>
+                        </div>
+                      </div>
+                      <div className="audit-item-center">
+                        <span className="audit-item-msg">{w.message}</span>
+                      </div>
+                      <div className="audit-item-right">
+                        <button
+                          type="button"
+                          className="audit-inspect-btn"
+                          onClick={() => handleInspectFromWarning(w)}
+                          title={`Inspect payslip for ${w.employee_name}`}
+                        >
+                          <Eye size={13} />
+                          <span>Inspect</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Expand / Collapse Footer */}
+              {filteredWarnings.length > 4 && (
+                <div className="audit-footer">
+                  <button
+                    type="button"
+                    className="btn-audit-toggle"
+                    onClick={() => setWarningsExpanded(!warningsExpanded)}
+                  >
+                    {warningsExpanded ? (
+                      <>
+                        <ChevronUp size={14} />
+                        <span>Collapse audit exceptions</span>
+                      </>
+                    ) : (
+                      <>
+                        <ChevronDown size={14} />
+                        <span>Show all {filteredWarnings.length} flagged exceptions</span>
+                      </>
+                    )}
+                  </button>
+                  <span className="audit-footer-hint">
+                    Showing {warningsExpanded ? filteredWarnings.length : 4} of {filteredWarnings.length} exceptions
+                  </span>
+                </div>
+              )}
             </div>
           )}
 
