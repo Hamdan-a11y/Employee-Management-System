@@ -212,15 +212,15 @@ export default function MyPayslips() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid var(--border-color)' }}>
                         <div>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Basic Salary</span>
-                          <span style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.basic_salary).toLocaleString()}</span>
+                          <span className="font-numeric" style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.basic_salary).toLocaleString()}</span>
                         </div>
                         <div>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Daily Rate</span>
-                          <span style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.daily_rate).toLocaleString()}</span>
+                          <span className="font-numeric" style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.daily_rate).toLocaleString()}</span>
                         </div>
                         <div>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Hourly Rate</span>
-                          <span style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.hourly_rate).toLocaleString()}</span>
+                          <span className="font-numeric" style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.hourly_rate).toLocaleString()}</span>
                         </div>
                       </div>
 

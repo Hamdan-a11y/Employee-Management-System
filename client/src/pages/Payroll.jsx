@@ -695,15 +695,15 @@ export default function Payroll() {
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12, background: '#f8fafc', padding: 12, borderRadius: 8, border: '1px solid var(--border-color)' }}>
                         <div>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Basic Salary</span>
-                          <span style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.basic_salary).toLocaleString()}</span>
+                          <span className="font-numeric" style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.basic_salary).toLocaleString()}</span>
                         </div>
                         <div>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Daily Rate</span>
-                          <span style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.daily_rate).toLocaleString()}</span>
+                          <span className="font-numeric" style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.daily_rate).toLocaleString()}</span>
                         </div>
                         <div>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Hourly Rate</span>
-                          <span style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.hourly_rate).toLocaleString()}</span>
+                          <span className="font-numeric" style={{ fontWeight: 700 }}>PKR {Number(payslipDetails.payslip.hourly_rate).toLocaleString()}</span>
                         </div>
                       </div>
 
@@ -839,7 +839,7 @@ export default function Payroll() {
                               <div style={{ fontWeight: 600, fontSize: '0.85rem' }}>{s.employee_name}</div>
                               <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{s.designation}</div>
                             </div>
-                            <span style={{ fontWeight: 700, fontSize: '0.8rem', fontFamily: 'monospace' }}>
+                            <span className="font-numeric" style={{ fontWeight: 700, fontSize: '0.85rem' }}>
                               PKR {Number(s.basic_salary).toLocaleString()}
                             </span>
                           </div>

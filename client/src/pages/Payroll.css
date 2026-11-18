@@ -156,7 +156,12 @@
   font-size: 1.35rem;
   font-weight: 700;
   color: var(--text-primary);
-  font-feature-settings: 'tnum';
+  font-family: var(--font-numeric, 'Plus Jakarta Sans', sans-serif);
+  font-variant-numeric: tabular-nums lining-nums;
+  -moz-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  -webkit-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  letter-spacing: -0.015em;
 }
 
 .payroll-metric-box .value.gross {
@@ -395,9 +400,14 @@
 
 .numeric-cell {
   text-align: right;
-  font-feature-settings: 'tnum';
-  font-family: monospace;
-  font-size: 0.875rem;
+  font-family: var(--font-numeric, 'Plus Jakarta Sans', sans-serif);
+  font-variant-numeric: tabular-nums lining-nums;
+  -moz-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  -webkit-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  letter-spacing: -0.015em;
+  font-size: 0.885rem;
+  font-weight: 600;
 }
 
 .net-pay-cell {
@@ -528,14 +538,24 @@
   color: #15803d;
   font-weight: 600;
   text-align: right;
-  font-family: monospace;
+  font-family: var(--font-numeric, 'Plus Jakarta Sans', sans-serif);
+  font-variant-numeric: tabular-nums lining-nums;
+  -moz-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  -webkit-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  letter-spacing: -0.015em;
 }
 
 .amount-negative {
   color: #b91c1c;
   font-weight: 600;
   text-align: right;
-  font-family: monospace;
+  font-family: var(--font-numeric, 'Plus Jakarta Sans', sans-serif);
+  font-variant-numeric: tabular-nums lining-nums;
+  -moz-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  -webkit-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  letter-spacing: -0.015em;
 }
 
 .payslip-summary-box {
@@ -563,5 +583,10 @@
   font-size: 1.5rem;
   font-weight: 800;
   color: var(--primary);
-  font-family: monospace;
+  font-family: var(--font-numeric, 'Plus Jakarta Sans', sans-serif);
+  font-variant-numeric: tabular-nums lining-nums;
+  -moz-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  -webkit-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  letter-spacing: -0.02em;
 }

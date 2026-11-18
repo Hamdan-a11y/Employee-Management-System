@@ -87,7 +87,12 @@
 
 .payslip-row .value {
   font-weight: 600;
-  font-family: monospace;
+  font-family: var(--font-numeric, 'Plus Jakarta Sans', sans-serif);
+  font-variant-numeric: tabular-nums lining-nums;
+  -moz-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  -webkit-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  letter-spacing: -0.015em;
 }
 
 .payslip-row.net-row {
@@ -101,6 +106,12 @@
   font-size: 1.25rem;
   font-weight: 800;
   color: var(--primary);
+  font-family: var(--font-numeric, 'Plus Jakarta Sans', sans-serif);
+  font-variant-numeric: tabular-nums lining-nums;
+  -moz-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  -webkit-font-feature-settings: 'tnum' 1, 'lnum' 1;
+  font-feature-settings: 'tnum' 1, 'lnum' 1;
+  letter-spacing: -0.02em;
 }
 
 .payslip-card-footer {
