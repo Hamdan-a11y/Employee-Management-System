@@ -340,10 +340,6 @@ router.post('/check-out', async (req, res) => {
     res.status(500).json({ message: 'Failed to record check-out.', error: error.message });
   }
 });
-  } catch (error) {
-    res.status(500).json({ message: 'Failed to record check-out.', error: error.message });
-  }
-});
 
 // ==========================================
 // 2. ATTENDANCE LOGS & HISTORY
