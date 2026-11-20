@@ -458,3 +458,31 @@
     transform: rotate(360deg);
   }
 }
+
+/* Dropdown Footer */
+.notif-dropdown-footer {
+  padding: 10px 14px;
+  border-top: 1px solid #f1f5f9;
+  background-color: #fafafa;
+  border-bottom-left-radius: 12px;
+  border-bottom-right-radius: 12px;
+  text-align: center;
+}
+
+.notif-view-all-link {
+  width: 100%;
+  padding: 8px 12px;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: #0284c7;
+  background: transparent;
+  border: 1px solid #e0f2fe;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 150ms ease;
+}
+
+.notif-view-all-link:hover {
+  background-color: #e0f2fe;
+  color: #0369a1;
+}

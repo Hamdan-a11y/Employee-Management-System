@@ -28,6 +28,8 @@ import WorkingWeek from './pages/WorkingWeek';
 import TeamCalendar from './pages/TeamCalendar';
 import Overtime from './pages/Overtime';
 import JobRuns from './pages/JobRuns';
+import Notifications from './pages/Notifications';
+import Analytics from './pages/Analytics';
 
 function App() {
   return (
@@ -261,6 +263,22 @@ function App() {
           />
           <Route path="/jobs" element={<Navigate to="/admin/jobs" replace />} />
 
+          <Route
+            path="/notifications"
+            element={
+              <ProtectedRoute>
+                <Notifications />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/analytics"
+            element={
+              <ProtectedRoute>
+                <Analytics />
+              </ProtectedRoute>
+            }
+          />
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

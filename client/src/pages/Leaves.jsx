@@ -29,7 +29,7 @@ import './Leaves.css';
 const Leaves = () => {
   const { user, isAdmin, isHR, isDeptManager, isEmployee, can } = useAuth();
   const canManageLeaves = isAdmin || isHR || isDeptManager || (typeof can === 'function' && can('leave.manage'));
-  const { success, error: notifyError } = useNotification();
+  const { success, error: notifyError, subscribeDataChange } = useNotification();
 
   // ==========================================
   // 1. STATE: LEAVE BALANCES
@@ -141,6 +141,18 @@ const Leaves = () => {
   useEffect(() => {
     fetchRequests();
   }, [fetchRequests]);
+
+  // Real-time listener for leave data-changed events
+  useEffect(() => {
+    if (!subscribeDataChange) return;
+    const unsubscribe = subscribeDataChange((eventData) => {
+      if (eventData.event === 'leave:updated') {
+        fetchBalances();
+        fetchRequests();
+      }
+    });
+    return unsubscribe;
+  }, [subscribeDataChange, fetchBalances, fetchRequests]);
 
   // Compute live duration & working-day preview for the request modal
   const computeDurationDays = () => {

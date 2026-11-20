@@ -5,7 +5,7 @@ const pool = require('../db');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { requirePermission, verifyDepartmentAccess } = require('../middleware/rbac');
 const { logAudit } = require('../services/auditLogger');
-const { notifyEmployeeUser, notifyAdmins } = require('../services/notificationService');
+const { notifyUser, notifyEmployeeUser, notifyDepartmentManager, notifyAdmins, emitDataChanged } = require('../services/notificationService');
 const { generateCSV } = require('../utils/csvHelper');
 const { attendanceLimiter } = require('../middleware/rateLimiter');
 const {
@@ -358,6 +358,23 @@ router.post('/check-in', attendanceLimiter, async (req, res) => {
 
     const [savedRows] = await pool.query('SELECT * FROM attendance WHERE id = ?', [newId]);
     const savedRecord = savedRows[0];
+
+    // Real-time alert on late arrival
+    if (isLate) {
+      notifyUser(req.user.id, {
+        type: 'system',
+        title: 'Late Arrival Recorded',
+        message: `You arrived ${lateMinutes} minutes late for your shift on ${shiftDate}.`,
+        link: '/attendance'
+      }).catch(() => {});
+    }
+
+    // Emit attendance:updated to user, department manager and admins
+    emitDataChanged(
+      [`user:${req.user.id}`, employee.department_id ? `dept:${employee.department_id}` : null, 'admins'].filter(Boolean),
+      'attendance:updated',
+      { id: newId }
+    );
 
     // Log audit if late or flagged suspicious
     if (isLate || suspiciousCheck.isSuspicious) {
@@ -1208,9 +1225,20 @@ router.post('/corrections', async (req, res) => {
 
     const correctionId = result.insertId;
 
-    // Notify admins of new pending correction request
-    const [empRows] = await pool.query('SELECT name FROM employees WHERE id = ?', [employeeId]);
+    // Notify department manager & admins of new pending correction request
+    const [empRows] = await pool.query('SELECT name, department_id FROM employees WHERE id = ?', [employeeId]);
     const empName = empRows[0]?.name || 'Employee';
+    const deptId = empRows[0]?.department_id;
+
+    if (deptId) {
+      notifyDepartmentManager({
+        departmentId: deptId,
+        type: 'system',
+        title: 'New Attendance Correction Request',
+        message: `${empName} has requested an attendance correction for ${date}. Reason: "${reason.trim()}"`,
+        link: '/attendance?tab=corrections'
+      }).catch(() => {});
+    }
 
     notifyAdmins({
       type: 'system',
@@ -1218,6 +1246,8 @@ router.post('/corrections', async (req, res) => {
       message: `${empName} has requested an attendance correction for ${date}. Reason: "${reason.trim()}"`,
       link: '/attendance?tab=corrections'
     }).catch(() => {});
+
+    emitDataChanged([deptId ? `dept:${deptId}` : null, 'admins'].filter(Boolean), 'attendance:updated', { id: correctionId });
 
     res.status(201).json({
       message: 'Attendance correction request submitted successfully.',
@@ -1439,6 +1469,12 @@ router.patch('/corrections/:id/approve', requirePermission('attendance.manage'),
       sendEmail: true
     }).catch(() => {});
 
+    emitDataChanged(
+      [`user:${correction.employee_id}`, correction.department_id ? `dept:${correction.department_id}` : null, 'admins'].filter(Boolean),
+      'attendance:updated',
+      { id: correction.attendance_id || id }
+    );
+
     // Log audit
     logAudit({
       req,
@@ -1510,6 +1546,12 @@ router.patch('/corrections/:id/reject', requirePermission('attendance.manage'), 
       link: '/attendance',
       sendEmail: true
     }).catch(() => {});
+
+    emitDataChanged(
+      [`user:${correction.employee_id}`, correction.department_id ? `dept:${correction.department_id}` : null, 'admins'].filter(Boolean),
+      'attendance:updated',
+      { id }
+    );
 
     // Log audit
     logAudit({

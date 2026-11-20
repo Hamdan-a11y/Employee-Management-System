@@ -36,7 +36,7 @@ const Attendance = () => {
   const { user, isAdmin, isHR, isDeptManager, isEmployee, can } = useAuth();
   const canManageAttendance = isAdmin || isHR || isDeptManager || (typeof can === 'function' && can('attendance.manage'));
   const canExport = isAdmin || isHR || (typeof can === 'function' && can('employee.export'));
-  const { success, error: notifyError } = useNotification();
+  const { success, error: notifyError, subscribeDataChange } = useNotification();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const activeTab = searchParams.get('tab') || 'logs';
@@ -358,6 +358,21 @@ const Attendance = () => {
       fetchCorrections();
     }
   }, [activeTab, fetchCorrections]);
+
+  // Real-time listener for attendance data-changed events
+  useEffect(() => {
+    if (!subscribeDataChange) return;
+    const unsubscribe = subscribeDataChange((eventData) => {
+      if (eventData.event === 'attendance:updated') {
+        fetchTodayStatus();
+        if (activeTab === 'logs') fetchLogs();
+        if (activeTab === 'corrections') fetchCorrections();
+        if (activeTab === 'monthly') fetchMonthlyReport();
+        if (activeTab === 'calendar') fetchEmployeeCalendar();
+      }
+    });
+    return unsubscribe;
+  }, [subscribeDataChange, activeTab, fetchLogs, fetchCorrections, fetchMonthlyReport, fetchEmployeeCalendar]);
 
   // Submit Correction Request
   const handleCorrectionSubmit = async (e) => {

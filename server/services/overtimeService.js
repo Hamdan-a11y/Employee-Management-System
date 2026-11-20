@@ -2,7 +2,7 @@ const pool = require('../db');
 const { getEmployeeShift } = require('./shiftService');
 const { getDayType } = require('./calendarService');
 const { logAudit } = require('./auditLogger');
-const { notifyEmployeeUser, notifyDepartmentManager } = require('./notificationService');
+const { notifyEmployeeUser, notifyDepartmentManager, emitDataChanged } = require('./notificationService');
 
 /**
  * Format a Date or date string to YYYY-MM-DD
@@ -341,6 +341,36 @@ async function calculateOvertime(employeeId, date, options = {}) {
       [employeeId, dateStr]
     );
     resultData.request = savedRows[0] || null;
+
+    if (resultData.request) {
+      try {
+        const [empRows] = await conn.query('SELECT name, department_id FROM employees WHERE id = ?', [employeeId]);
+        const deptId = empRows[0]?.department_id;
+        const empName = empRows[0]?.name || 'Employee';
+
+        if (status === 'pending' && deptId) {
+          notifyDepartmentManager({
+            departmentId: deptId,
+            type: 'system',
+            title: 'New Overtime Request',
+            message: `${empName} has logged ${roundedMinutes} minutes of overtime for ${dateStr}.`,
+            link: '/overtime'
+          }).catch(() => {});
+        } else if (status === 'approved') {
+          notifyEmployeeUser({
+            employeeId,
+            type: 'system',
+            title: 'Overtime Auto-Approved',
+            message: `Your ${roundedMinutes} minutes of overtime for ${dateStr} has been auto-approved.`,
+            link: '/overtime'
+          }).catch(() => {});
+        }
+
+        emitDataChanged([deptId ? `dept:${deptId}` : null, 'admins'].filter(Boolean), 'overtime:updated', { id: resultData.request.id });
+      } catch (notifErr) {
+        console.warn('[Overtime Notice] Notification emit error:', notifErr.message);
+      }
+    }
   }
 
   return resultData;
@@ -459,6 +489,12 @@ async function approveOvertimeRequest({ requestId, reviewerUser, approvedMinutes
       link: '/attendance'
     }).catch(() => {});
 
+    emitDataChanged(
+      [request.department_id ? `dept:${request.department_id}` : null, 'admins'].filter(Boolean),
+      'overtime:updated',
+      { id: requestId }
+    );
+
     // Audit Log
     if (req) {
       logAudit({
@@ -570,6 +606,12 @@ async function rejectOvertimeRequest({ requestId, reviewerUser, comment, req = n
       message: `Your overtime request for ${formatLocalDate(request.work_date)} was rejected: "${comment.trim()}"`,
       link: '/attendance'
     }).catch(() => {});
+
+    emitDataChanged(
+      [request.department_id ? `dept:${request.department_id}` : null, 'admins'].filter(Boolean),
+      'overtime:updated',
+      { id: requestId }
+    );
 
     // Audit Log
     if (req) {

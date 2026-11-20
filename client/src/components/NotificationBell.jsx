@@ -206,7 +206,7 @@ const NotificationBell = () => {
                 </p>
               </div>
             ) : (
-              filteredNotifications.map((notif) => (
+              filteredNotifications.slice(0, 5).map((notif) => (
                 <div
                   key={notif.id}
                   className={`notif-item ${notif.is_read ? 'read' : 'unread'} ${notif.link ? 'clickable' : ''}`}
@@ -252,6 +252,20 @@ const NotificationBell = () => {
                 </div>
               ))
             )}
+          </div>
+
+          {/* Footer with View All Link */}
+          <div className="notif-dropdown-footer">
+            <button
+              type="button"
+              className="notif-view-all-link"
+              onClick={() => {
+                setIsOpen(false);
+                navigate('/notifications');
+              }}
+            >
+              View all notifications ({notifications.length})
+            </button>
           </div>
         </div>
       )}

@@ -31,7 +31,7 @@ import './Overtime.css';
 
 const Overtime = () => {
   const { user, isAdmin, isHR, isDeptManager, isEmployee } = useAuth();
-  const { success, error: notifyError } = useNotification();
+  const { success, error: notifyError, subscribeDataChange } = useNotification();
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const navigate = useNavigate();
@@ -134,6 +134,19 @@ const Overtime = () => {
       fetchApprovalRequests();
     }
   }, [activeTab, canManageOvertime, fetchApprovalRequests]);
+
+  // Real-time listener for overtime data-changed events
+  useEffect(() => {
+    if (!subscribeDataChange) return;
+    const unsubscribe = subscribeDataChange((eventData) => {
+      if (eventData.event === 'overtime:updated') {
+        if (canManageOvertime) fetchApprovalRequests();
+        if (fetchMyOvertime) fetchMyOvertime();
+        if (fetchMonthlyReport) fetchMonthlyReport();
+      }
+    });
+    return unsubscribe;
+  }, [subscribeDataChange, canManageOvertime, fetchApprovalRequests, fetchMyOvertime, fetchMonthlyReport]);
 
   // Filtered requests by search keyword
   const filteredApprovalRequests = useMemo(() => {

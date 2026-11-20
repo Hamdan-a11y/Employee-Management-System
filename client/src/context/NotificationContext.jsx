@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import api from '../services/api';
 import { useAuth } from './AuthContext';
+import { connectSocket, disconnectSocket, getSocket } from '../services/socket';
 
 const NotificationContext = createContext(null);
 
 export const NotificationProvider = ({ children }) => {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, token } = useAuth();
 
   // --- Toasts (Ephemeral in-app feedback) ---
   const [toasts, setToasts] = useState([]);
@@ -16,7 +17,7 @@ export const NotificationProvider = ({ children }) => {
   }, []);
 
   const showToast = useCallback(
-    ({ type = 'info', title, message, duration = 4000 }) => {
+    ({ type = 'info', title, message, duration = 4500, link = null }) => {
       if (!message && !title) return;
 
       const dedupeKey = `${type}:${title || ''}:${message || ''}`;
@@ -29,7 +30,6 @@ export const NotificationProvider = ({ children }) => {
       }
       recentToastsRef.current.set(dedupeKey, now);
 
-      // Clean up deduplication cache periodically
       if (recentToastsRef.current.size > 50) {
         for (const [key, timestamp] of recentToastsRef.current.entries()) {
           if (now - timestamp > 5000) {
@@ -39,9 +39,9 @@ export const NotificationProvider = ({ children }) => {
       }
 
       const id = `${now}-${Math.random().toString(36).substring(2, 9)}`;
-      const newToast = { id, type, title, message, duration };
+      const newToast = { id, type, title, message, duration, link };
 
-      setToasts((prev) => [...prev.slice(-4), newToast]); // Keep at most 5 toasts stacked
+      setToasts((prev) => [...prev.slice(-4), newToast]);
     },
     []
   );
@@ -63,39 +63,143 @@ export const NotificationProvider = ({ children }) => {
     [showToast]
   );
 
-  // --- Persistent In-App Notifications (Notification Center) ---
+  // --- Persistent In-App Notifications ---
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loadingNotifications, setLoadingNotifications] = useState(false);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
 
-  const fetchNotifications = useCallback(async () => {
+  // Data change subscribers for dashboard & approval live updates
+  const dataSubscribersRef = useRef(new Set());
+
+  const subscribeDataChange = useCallback((callback) => {
+    dataSubscribersRef.current.add(callback);
+    return () => {
+      dataSubscribersRef.current.delete(callback);
+    };
+  }, []);
+
+  const fetchUnreadCount = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const res = await api.get('/notifications/unread-count');
+      if (typeof res.data?.unreadCount === 'number') {
+        setUnreadCount(res.data.unreadCount);
+      }
+    } catch (err) {
+      // Ignore background refresh errors
+    }
+  }, [isAuthenticated]);
+
+  const fetchNotifications = useCallback(async (params = { limit: 25 }) => {
     if (!isAuthenticated) return;
     try {
       setLoadingNotifications(true);
-      const res = await api.get('/notifications?limit=25');
+      const queryStr = new URLSearchParams(params).toString();
+      const res = await api.get(`/notifications?${queryStr}`);
       setNotifications(res.data.notifications || []);
       setUnreadCount(res.data.unreadCount || 0);
+      return res.data;
     } catch (err) {
-      console.error('Failed to fetch in-app notifications:', err.message);
+      console.error('Failed to fetch notifications:', err.message);
     } finally {
       setLoadingNotifications(false);
     }
   }, [isAuthenticated]);
 
-  // Initial fetch and interval refresh on authentication
+  // Socket Connection Management & Event Handling
   useEffect(() => {
-    if (isAuthenticated) {
-      fetchNotifications();
-      const interval = setInterval(() => {
-        fetchNotifications();
-      }, 45000); // Check for new notifications every 45 seconds
-
-      return () => clearInterval(interval);
-    } else {
+    if (!isAuthenticated) {
+      disconnectSocket();
+      setIsSocketConnected(false);
       setNotifications([]);
       setUnreadCount(0);
+      return;
     }
-  }, [isAuthenticated, fetchNotifications]);
+
+    const authToken = token || localStorage.getItem('token');
+    if (!authToken) return;
+
+    fetchNotifications();
+
+    const socket = connectSocket(authToken);
+    if (!socket) return;
+
+    const handleConnect = () => {
+      setIsSocketConnected(true);
+    };
+
+    const handleDisconnect = () => {
+      setIsSocketConnected(false);
+    };
+
+    const handleNewNotification = (notification) => {
+      if (!notification) return;
+
+      // Update state: prepend notification and increment unread count
+      setNotifications((prev) => [notification, ...prev.filter((n) => n.id !== notification.id)]);
+      setUnreadCount((prev) => prev + 1);
+
+      // Trigger toast UNLESS user is already on the page the notification links to
+      const currentPath = window.location.pathname;
+      const targetLink = notification.link ? notification.link.split('?')[0] : null;
+
+      if (!targetLink || currentPath !== targetLink) {
+        showToast({
+          type: notification.type === 'security' ? 'error' : 'info',
+          title: notification.title,
+          message: notification.message,
+          link: notification.link,
+          duration: 5000,
+        });
+      }
+    };
+
+    const handleDataChanged = (eventData) => {
+      dataSubscribersRef.current.forEach((cb) => {
+        try {
+          cb(eventData);
+        } catch (err) {
+          console.error('[NotificationContext] Subscriber callback error:', err);
+        }
+      });
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('notification:new', handleNewNotification);
+    socket.on('attendance:updated', (payload) => handleDataChanged({ event: 'attendance:updated', ...payload }));
+    socket.on('leave:updated', (payload) => handleDataChanged({ event: 'leave:updated', ...payload }));
+    socket.on('overtime:updated', (payload) => handleDataChanged({ event: 'overtime:updated', ...payload }));
+
+    if (socket.connected) {
+      setIsSocketConnected(true);
+    }
+
+    return () => {
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('notification:new', handleNewNotification);
+      socket.off('attendance:updated');
+      socket.off('leave:updated');
+      socket.off('overtime:updated');
+    };
+  }, [isAuthenticated, token, fetchNotifications, showToast]);
+
+  // Fallback Polling: if socket disconnected, poll unread count every 60s
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    // Check every 60s if socket is disconnected
+    const interval = setInterval(() => {
+      const socket = getSocket();
+      if (!socket || !socket.connected) {
+        fetchUnreadCount();
+      }
+    }, 60000);
+
+    return () => clearInterval(interval);
+  }, [isAuthenticated, fetchUnreadCount]);
 
   const markAsRead = async (id) => {
     try {
@@ -156,11 +260,14 @@ export const NotificationProvider = ({ children }) => {
     notifications,
     unreadCount,
     loadingNotifications,
+    isSocketConnected,
     fetchNotifications,
+    fetchUnreadCount,
     markAsRead,
     markAllAsRead,
     deleteNotification,
     clearRead,
+    subscribeDataChange,
   };
 
   return <NotificationContext.Provider value={value}>{children}</NotificationContext.Provider>;

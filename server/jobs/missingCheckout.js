@@ -1,32 +1,8 @@
 const pool = require('../db');
 const { getEmployeeShift } = require('../services/shiftService');
 const { isMonthLocked } = require('../services/calendarService');
-const { notifyEmployeeUser, notifyUser } = require('../services/notificationService');
+const { notifyEmployeeUser, notifyDepartmentManager, emitDataChanged } = require('../services/notificationService');
 const { getKarachiDate, getKarachiTime, runJob } = require('./runner');
-
-/**
- * Helper to notify department manager
- */
-async function notifyDepartmentManager({ departmentId, title, message }) {
-  if (!departmentId) return;
-  try {
-    const [managers] = await pool.query(
-      "SELECT id FROM users WHERE role = 'department_manager' AND department_id = ?",
-      [departmentId]
-    );
-    for (const mgr of managers) {
-      await notifyUser({
-        userId: mgr.id,
-        type: 'system',
-        title,
-        message,
-        link: '/attendance'
-      });
-    }
-  } catch (err) {
-    console.error('[missingCheckout] Failed to notify department manager:', err.message);
-  }
-}
 
 /**
  * Checks if a shift check-out is missing past shift end + buffer minutes
@@ -149,6 +125,12 @@ async function executeMissingCheckout(context = {}) {
         title: 'Employee Missing Check-out',
         message: `Employee ${record.employee_name} has not recorded a check-out for their shift on ${record.date}.`
       });
+
+      emitDataChanged(
+        [record.department_id ? `dept:${record.department_id}` : null, 'admins'].filter(Boolean),
+        'attendance:updated',
+        { id: record.id }
+      );
 
       flaggedCount++;
     }

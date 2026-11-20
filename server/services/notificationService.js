@@ -1,30 +1,68 @@
 const pool = require('../db');
 const { sendAccountChangeNotificationEmail } = require('./mailer');
+const { getIO, emitDataChanged } = require('../socket');
 
 /**
- * Creates an in-app notification for a specific user and optionally triggers an email alert.
+ * Creates an in-app notification for a specific user, saves to DB,
+ * emits real-time "notification:new" via Socket.IO, and optionally triggers email alert.
+ * 
+ * Supports both:
+ * notifyUser(userId, { type, title, message, link, ... })
+ * notifyUser({ userId, type, title, message, link, ... })
  */
-const notifyUser = async ({
-  userId,
-  type = 'system', // 'account' | 'profile' | 'security' | 'system'
-  title,
-  message,
-  link = null,
-  sendEmail = false,
-  emailDetails = null,
-}) => {
+const notifyUser = async (arg1, arg2 = {}) => {
+  let userId, notification;
+  if (typeof arg1 === 'object' && arg1 !== null) {
+    userId = arg1.userId || arg1.user_id;
+    notification = arg1;
+  } else {
+    userId = arg1;
+    notification = arg2 || {};
+  }
+
+  const {
+    type = 'system',
+    title,
+    message,
+    link = null,
+    sendEmail = false,
+    emailDetails = null,
+  } = notification;
+
   if (!userId || !title || !message) return null;
 
   try {
+    // 1. Save to database first
     const [result] = await pool.query(
-      `INSERT INTO notifications (user_id, type, title, message, link)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO notifications (user_id, type, title, message, link, is_read, created_at)
+       VALUES (?, ?, ?, ?, ?, FALSE, NOW())`,
       [userId, type, title, message, link]
     );
 
     const notificationId = result.insertId;
 
-    // Trigger email notification for account/security changes or when requested
+    const savedNotification = {
+      id: notificationId,
+      user_id: userId,
+      type,
+      title,
+      message,
+      link,
+      is_read: 0,
+      created_at: new Date().toISOString()
+    };
+
+    // 2. Emit real-time "notification:new" to user's private room
+    try {
+      const io = getIO();
+      if (io) {
+        io.to(`user:${userId}`).emit('notification:new', savedNotification);
+      }
+    } catch (socketErr) {
+      console.error('[Notification Service] Socket emit error:', socketErr.message);
+    }
+
+    // 3. Trigger email notification for account/security changes or when requested
     if (sendEmail || type === 'account' || type === 'security') {
       try {
         const [users] = await pool.query('SELECT name, email FROM users WHERE id = ?', [userId]);
@@ -75,8 +113,7 @@ const notifyEmployeeUser = async ({
     }
 
     if (users.length > 0) {
-      return await notifyUser({
-        userId: users[0].id,
+      return await notifyUser(users[0].id, {
         type,
         title,
         message,
@@ -89,6 +126,36 @@ const notifyEmployeeUser = async ({
   } catch (error) {
     console.error('[Notification Service] Error notifying employee user:', error.message);
     return null;
+  }
+};
+
+/**
+ * Notifies managers of a specific department.
+ */
+const notifyDepartmentManager = async ({
+  departmentId,
+  type = 'system',
+  title,
+  message,
+  link = null,
+}) => {
+  if (!departmentId) return;
+  try {
+    const [managers] = await pool.query(
+      "SELECT id FROM users WHERE role = 'department_manager' AND department_id = ?",
+      [departmentId]
+    );
+    for (const mgr of managers) {
+      await notifyUser(mgr.id, {
+        type,
+        title,
+        message,
+        link,
+        sendEmail: false
+      });
+    }
+  } catch (error) {
+    console.error('[Notification Service] Error notifying department manager:', error.message);
   }
 };
 
@@ -112,8 +179,7 @@ const notifyAdmins = async ({
 
     const [admins] = await pool.query(query, params);
     for (const admin of admins) {
-      await notifyUser({
-        userId: admin.id,
+      await notifyUser(admin.id, {
         type,
         title,
         message,
@@ -127,33 +193,74 @@ const notifyAdmins = async ({
 };
 
 /**
- * Retrieves notifications for a user along with unread count.
+ * Retrieves notifications for a user along with pagination metadata and unread count.
  */
-const getNotifications = async ({ userId, limit = 20, unreadOnly = false }) => {
+const getNotifications = async ({
+  userId,
+  page = 1,
+  limit = 20,
+  unreadOnly = false,
+  status = 'all',
+  type = null,
+}) => {
   try {
-    let query = 'SELECT * FROM notifications WHERE user_id = ?';
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    let whereClause = 'WHERE user_id = ?';
     const params = [userId];
 
-    if (unreadOnly) {
-      query += ' AND is_read = FALSE';
+    if (unreadOnly || status === 'unread') {
+      whereClause += ' AND is_read = FALSE';
     }
 
-    query += ' ORDER BY created_at DESC LIMIT ?';
-    params.push(Number(limit) || 20);
+    if (type && type !== 'all') {
+      whereClause += ' AND type = ?';
+      params.push(type);
+    }
 
-    const [notifications] = await pool.query(query, params);
+    const [countRows] = await pool.query(
+      `SELECT COUNT(*) AS total FROM notifications ${whereClause}`,
+      params
+    );
+    const total = countRows[0]?.total || 0;
+
+    const listQuery = `SELECT * FROM notifications ${whereClause} ORDER BY created_at DESC LIMIT ? OFFSET ?`;
+    const [notifications] = await pool.query(listQuery, [...params, limitNum, offset]);
 
     const [unreadCountRows] = await pool.query(
       'SELECT COUNT(*) AS unreadCount FROM notifications WHERE user_id = ? AND is_read = FALSE',
       [userId]
     );
+    const unreadCount = unreadCountRows[0]?.unreadCount || 0;
 
     return {
       notifications,
-      unreadCount: unreadCountRows[0]?.unreadCount || 0,
+      total,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(total / limitNum) || 1,
+      unreadCount,
     };
   } catch (error) {
     console.error('[Notification Service] Failed to get notifications:', error.message);
+    throw error;
+  }
+};
+
+/**
+ * Gets the current unread notifications count for a user.
+ */
+const getUnreadCount = async (userId) => {
+  try {
+    const [rows] = await pool.query(
+      'SELECT COUNT(*) AS unreadCount FROM notifications WHERE user_id = ? AND is_read = FALSE',
+      [userId]
+    );
+    return rows[0]?.unreadCount || 0;
+  } catch (error) {
+    console.error('[Notification Service] Failed to get unread count:', error.message);
     throw error;
   }
 };
@@ -225,10 +332,13 @@ const clearReadNotifications = async ({ userId }) => {
 module.exports = {
   notifyUser,
   notifyEmployeeUser,
+  notifyDepartmentManager,
   notifyAdmins,
   getNotifications,
+  getUnreadCount,
   markNotificationAsRead,
   markAllNotificationsAsRead,
   deleteNotification,
   clearReadNotifications,
+  emitDataChanged,
 };

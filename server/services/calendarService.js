@@ -30,7 +30,14 @@ function parseLocalDate(dateStr) {
  */
 async function isMonthLocked(monthStr, connection = null) {
   const executor = connection || pool;
-  const month = monthStr.slice(0, 7);
+  const month = String(monthStr).slice(0, 7);
+  const [periodRows] = await executor.query(
+    'SELECT status FROM attendance_periods WHERE month = ? LIMIT 1',
+    [month]
+  );
+  if (periodRows.length > 0 && periodRows[0].status === 'closed') {
+    return true;
+  }
   const [rows] = await executor.query(
     'SELECT id, status FROM payroll_runs WHERE month = ? AND status IN ("Approved", "Locked")',
     [month]

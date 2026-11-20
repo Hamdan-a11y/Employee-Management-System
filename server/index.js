@@ -28,11 +28,20 @@ const workingWeekRoutes = require('./routes/workingWeek');
 const calendarRoutes = require('./routes/calendar');
 const overtimeRoutes = require('./routes/overtime');
 const jobRoutes = require('./routes/jobs');
+const analyticsRoutes = require('./routes/analytics');
+const periodRoutes = require('./routes/periods');
 const { initializeScheduler } = require('./jobs/scheduler');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./docs/swaggerSpec');
 
+const http = require('http');
+const { initSocket } = require('./socket');
+
 const app = express();
+const httpServer = http.createServer(app);
+initSocket(httpServer);
+app.httpServer = httpServer;
+
 const PORT = config.port;
 const isProduction = config.isProduction;
 
@@ -146,6 +155,8 @@ app.use('/api/working-week', workingWeekRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/overtime', overtimeRoutes);
 app.use('/api/jobs', jobRoutes);
+app.use('/api/analytics', analyticsRoutes);
+app.use('/api/periods', periodRoutes);
 
 // Health check route
 app.get('/api/health', async (req, res) => {
@@ -176,7 +187,7 @@ app.use(errorHandler);
 // Start the server if directly executed (skip app.listen on Vercel serverless)
 let server = null;
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
-  server = app.listen(PORT, () => {
+  server = httpServer.listen(PORT, () => {
     logger.info(`Server running on http://localhost:${PORT} in [${process.env.NODE_ENV || 'development'}] mode`);
     // Initialize node-cron automated background jobs and catch-up check
     initializeScheduler();

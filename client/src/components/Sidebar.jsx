@@ -22,7 +22,8 @@ import {
   Sliders,
   Sun,
   Timer,
-  Cpu
+  Cpu,
+  BarChart3
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import './Sidebar.css';
@@ -136,6 +137,11 @@ const Sidebar = () => {
       to: '/attendance',
       label: 'Attendance',
       icon: Clock,
+    },
+    {
+      to: '/analytics',
+      label: 'Attendance Analytics',
+      icon: BarChart3,
     },
     {
       to: '/shifts',

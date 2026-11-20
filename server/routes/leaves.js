@@ -4,7 +4,7 @@ const pool = require('../db');
 const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { requirePermission, verifyDepartmentAccess } = require('../middleware/rbac');
 const { logAudit } = require('../services/auditLogger');
-const { notifyEmployeeUser, notifyAdmins } = require('../services/notificationService');
+const { notifyEmployeeUser, notifyDepartmentManager, notifyAdmins, emitDataChanged } = require('../services/notificationService');
 const { getWorkingDays, formatDate } = require('../services/calendarService');
 
 // All leave endpoints require authentication
@@ -479,9 +479,20 @@ router.post('/requests', async (req, res) => {
 
     const newRequestId = result.insertId;
 
-    // Fetch employee name for notification
-    const [empRows] = await pool.query('SELECT name FROM employees WHERE id = ?', [employeeId]);
+    // Fetch employee name and department for notification
+    const [empRows] = await pool.query('SELECT name, department_id FROM employees WHERE id = ?', [employeeId]);
     const employeeName = empRows[0]?.name || 'Employee';
+    const deptId = empRows[0]?.department_id;
+
+    if (deptId) {
+      await notifyDepartmentManager({
+        departmentId: deptId,
+        type: 'system',
+        title: 'New Leave Request Submitted',
+        message: `${employeeName} requested ${daysCount} day(s) of ${leave_type} leave (${formattedStart} to ${formattedEnd}).`,
+        link: '/leaves',
+      });
+    }
 
     // 5. Notify Administrators
     await notifyAdmins({
@@ -491,6 +502,8 @@ router.post('/requests', async (req, res) => {
       link: '/leaves',
       excludeUserId: req.user.id,
     });
+
+    emitDataChanged([deptId ? `dept:${deptId}` : null, 'admins'].filter(Boolean), 'leave:updated', { id: newRequestId });
 
     // 6. Audit Trail
     await logAudit({
@@ -651,6 +664,12 @@ router.patch('/requests/:id/approve', requirePermission('leave.manage'), async (
       details: `Approved ${leaveReq.days_count} day(s) ${leaveReq.leave_type} leave (${formattedStart} to ${formattedEnd})`,
     });
 
+    emitDataChanged(
+      [leaveReq.department_id ? `dept:${leaveReq.department_id}` : null, 'admins'].filter(Boolean),
+      'leave:updated',
+      { id: requestId }
+    );
+
     return res.status(200).json({
       message: 'Leave request approved successfully.',
       requestId,
@@ -739,6 +758,12 @@ router.patch('/requests/:id/reject', requirePermission('leave.manage'), async (r
       employeeName: leaveReq.employee_name,
       details: `Rejected ${leaveReq.leave_type} leave request: ${finalReason}`,
     });
+
+    emitDataChanged(
+      [leaveReq.department_id ? `dept:${leaveReq.department_id}` : null, 'admins'].filter(Boolean),
+      'leave:updated',
+      { id: requestId }
+    );
 
     return res.status(200).json({
       message: 'Leave request rejected successfully.',

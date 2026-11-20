@@ -3,6 +3,7 @@ const router = express.Router();
 const { authenticateToken } = require('../middleware/auth');
 const {
   getNotifications,
+  getUnreadCount,
   markNotificationAsRead,
   markAllNotificationsAsRead,
   deleteNotification,
@@ -12,14 +13,27 @@ const {
 // All notification endpoints require authenticated user session
 router.use(authenticateToken);
 
-// GET /api/notifications - List user's notifications and unread count
+// GET /api/notifications/unread-count - Get user's unread count
+router.get('/unread-count', async (req, res) => {
+  try {
+    const unreadCount = await getUnreadCount(req.user.id);
+    res.json({ unreadCount });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to fetch unread notification count.', error: error.message });
+  }
+});
+
+// GET /api/notifications - List user's notifications (paginated, filter by all/unread/type)
 router.get('/', async (req, res) => {
   try {
-    const { limit, unreadOnly } = req.query;
+    const { page, limit, status, unreadOnly, type } = req.query;
     const result = await getNotifications({
       userId: req.user.id,
-      limit: limit ? parseInt(limit, 10) : 25,
-      unreadOnly: unreadOnly === 'true',
+      page: page ? parseInt(page, 10) : 1,
+      limit: limit ? parseInt(limit, 10) : 20,
+      unreadOnly: unreadOnly === 'true' || unreadOnly === true,
+      status: status || (unreadOnly === 'true' ? 'unread' : 'all'),
+      type: type || null,
     });
     res.json(result);
   } catch (error) {
@@ -27,7 +41,7 @@ router.get('/', async (req, res) => {
   }
 });
 
-// PATCH /api/notifications/read-all - Mark all as read
+// PATCH /api/notifications/read-all - Mark all as read for current user
 router.patch('/read-all', async (req, res) => {
   try {
     const affected = await markAllNotificationsAsRead({ userId: req.user.id });
@@ -41,8 +55,13 @@ router.patch('/read-all', async (req, res) => {
 router.patch('/:id/read', async (req, res) => {
   try {
     const { id } = req.params;
+    const notificationId = parseInt(id, 10);
+    if (isNaN(notificationId)) {
+      return res.status(400).json({ message: 'Invalid notification ID.' });
+    }
+
     const success = await markNotificationAsRead({
-      notificationId: parseInt(id, 10),
+      notificationId,
       userId: req.user.id,
     });
 
@@ -56,7 +75,7 @@ router.patch('/:id/read', async (req, res) => {
   }
 });
 
-// DELETE /api/notifications - Clear all read notifications
+// DELETE /api/notifications - Clear all read notifications for current user
 router.delete('/', async (req, res) => {
   try {
     const affected = await clearReadNotifications({ userId: req.user.id });
@@ -70,8 +89,13 @@ router.delete('/', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    const notificationId = parseInt(id, 10);
+    if (isNaN(notificationId)) {
+      return res.status(400).json({ message: 'Invalid notification ID.' });
+    }
+
     const success = await deleteNotification({
-      notificationId: parseInt(id, 10),
+      notificationId,
       userId: req.user.id,
     });
 
