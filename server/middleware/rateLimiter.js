@@ -57,6 +57,13 @@ const authLimiter = createLimiter({
   message: 'Too many authentication attempts from this IP address. Please wait 15 minutes before retrying.',
 });
 
+// Attendance punch rate limiter (30 requests per minute per IP)
+const attendanceLimiter = createLimiter({
+  windowMs: 60 * 1000,
+  max: 30,
+  message: 'Too many attendance punch attempts. Please wait a minute before trying again.',
+});
+
 // Password reset specific limiter (per IP and per Email)
 const createPasswordResetLimiter = ({
   windowMs = 15 * 60 * 1000,
@@ -124,5 +131,6 @@ const createPasswordResetLimiter = ({
 module.exports = {
   apiLimiter,
   authLimiter,
+  attendanceLimiter,
   createPasswordResetLimiter,
 };

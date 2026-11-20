@@ -7,6 +7,14 @@ const { requirePermission, verifyDepartmentAccess } = require('../middleware/rba
 const { logAudit } = require('../services/auditLogger');
 const { notifyEmployeeUser, notifyAdmins } = require('../services/notificationService');
 const { generateCSV } = require('../utils/csvHelper');
+const { attendanceLimiter } = require('../middleware/rateLimiter');
+const {
+  validateCoordinates,
+  isLocationExempt,
+  evaluateLocationAgainstOffices,
+  detectSuspiciousLocation,
+  MAX_GPS_ACCURACY_METERS
+} = require('../services/locationService');
 const {
   getEmployeeShift,
   calculateLateStatus,
@@ -151,30 +159,45 @@ router.get('/today', async (req, res) => {
 /**
  * POST /api/attendance/check-in
  * Records check-in for today. Prevents duplicate check-ins.
- * Connects to shift system and evaluates late status based on grace period.
+ * Enforces server-side Geolocation verification, Haversine office geofence calculation,
+ * accuracy checks, exemption rules, and transaction safety.
  */
-router.post('/check-in', async (req, res) => {
-  try {
-    const employeeId = await resolveEmployeeId(req);
-    if (!employeeId) {
-      return res.status(400).json({ message: 'No linked employee profile found for your account.' });
-    }
+router.post('/check-in', attendanceLimiter, async (req, res) => {
+  let employeeId = req.user.employee_id;
+  if (!employeeId) {
+    const [matched] = await pool.query(
+      'SELECT id FROM employees WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL',
+      [req.user.email]
+    );
+    if (matched.length > 0) employeeId = matched[0].id;
+  }
 
+  if (!employeeId) {
+    return res.status(400).json({ message: 'No linked employee profile found for your account.' });
+  }
+
+  const conn = await pool.getConnection();
+  await conn.beginTransaction();
+  try {
     // 1. Check if employee exists and is active
-    const [empRows] = await pool.query(
-      'SELECT id, name, status FROM employees WHERE id = ? AND deleted_at IS NULL',
+    const [empRows] = await conn.query(
+      'SELECT id, name, department_id, status FROM employees WHERE id = ? AND deleted_at IS NULL',
       [employeeId]
     );
     if (empRows.length === 0) {
+      await conn.rollback();
+      conn.release();
       return res.status(404).json({ message: 'Employee record not found.' });
     }
     const employee = empRows[0];
 
     // Check if current month's attendance is locked by payroll
-    const [monthLock] = await pool.query(
+    const [monthLock] = await conn.query(
       'SELECT id FROM payroll_runs WHERE month = DATE_FORMAT(CURDATE(), "%Y-%m") AND status IN ("Approved", "Locked")'
     );
     if (monthLock.length > 0) {
+      await conn.rollback();
+      conn.release();
       return res.status(403).json({ message: 'Attendance records for this month are locked by approved payroll.' });
     }
 
@@ -187,7 +210,7 @@ router.post('/check-in', async (req, res) => {
       const yesterdayStr = formatLocalDate(new Date(now.getTime() - 86400000));
       const yesterdayShift = await getEmployeeShift(employeeId, yesterdayStr);
       if (yesterdayShift && yesterdayShift.crosses_midnight) {
-        const [yRec] = await pool.query('SELECT id FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, yesterdayStr]);
+        const [yRec] = await conn.query('SELECT id FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, yesterdayStr]);
         if (yRec.length === 0) {
           shiftDate = yesterdayStr;
           shift = yesterdayShift;
@@ -196,12 +219,14 @@ router.post('/check-in', async (req, res) => {
     }
 
     // 2. Prevent duplicate check-in for the shift date
-    const [existing] = await pool.query(
+    const [existing] = await conn.query(
       'SELECT id, check_in, check_out FROM attendance WHERE employee_id = ? AND date = ?',
       [employeeId, shiftDate]
     );
 
     if (existing.length > 0) {
+      await conn.rollback();
+      conn.release();
       return res.status(400).json({
         message: 'You have already checked in for today.',
         alreadyCheckedIn: true,
@@ -209,29 +234,141 @@ router.post('/check-in', async (req, res) => {
       });
     }
 
-    // 3. Determine late status using ONE SHARED FUNCTION
+    // 3. Geolocation & Exemption Verification
+    const { isExempt } = await isLocationExempt(employeeId, employee.department_id, shiftDate, conn);
+    const { latitude, longitude, accuracy } = req.body || {};
+
+    let checkInLat = null;
+    let checkInLon = null;
+    let checkInAccuracy = null;
+    let checkInOfficeId = null;
+    let checkInDistance = null;
+    let checkInLocationStatus = 'no_location';
+
+    if (!isExempt) {
+      // Location coordinates are strictly mandatory for non-exempt staff
+      if (latitude === undefined || latitude === null || longitude === undefined || longitude === null || latitude === '' || longitude === '') {
+        await conn.rollback();
+        conn.release();
+        return res.status(400).json({
+          message: 'Location access is required for attendance check-in. Please enable GPS/location services on your device and retry.'
+        });
+      }
+
+      const coordError = validateCoordinates(latitude, longitude);
+      if (coordError) {
+        await conn.rollback();
+        conn.release();
+        return res.status(400).json({ message: coordError });
+      }
+
+      checkInLat = parseFloat(latitude);
+      checkInLon = parseFloat(longitude);
+      checkInAccuracy = accuracy !== undefined && accuracy !== null && accuracy !== '' ? parseFloat(accuracy) : null;
+
+      if (checkInAccuracy !== null && checkInAccuracy > MAX_GPS_ACCURACY_METERS) {
+        await conn.rollback();
+        conn.release();
+        return res.status(400).json({
+          message: `GPS accuracy (${Math.round(checkInAccuracy)}m) is too poor. Must be within ${MAX_GPS_ACCURACY_METERS}m. Please move outdoors or near a window and retry.`
+        });
+      }
+
+      const evalResult = await evaluateLocationAgainstOffices(checkInLat, checkInLon, conn);
+      if (!evalResult.isInsideAny) {
+        await conn.rollback();
+        conn.release();
+        const officeName = evalResult.nearestOffice?.name || 'Office';
+        const allowedRad = evalResult.nearestOffice?.allowed_radius || 100;
+        return res.status(403).json({
+          message: `Check-in rejected: You are ${Math.round(evalResult.distanceMeters)}m away from ${officeName}, which exceeds the allowed radius of ${allowedRad}m.`,
+          distance: evalResult.distanceMeters,
+          allowedRadius: allowedRad,
+          nearestOffice: officeName
+        });
+      }
+
+      checkInLocationStatus = 'inside';
+      checkInOfficeId = evalResult.insideOffice?.id || evalResult.nearestOffice?.id || null;
+      checkInDistance = evalResult.distanceMeters;
+    } else {
+      // Staff is location-exempt
+      checkInLocationStatus = 'exempt';
+      if (latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null && latitude !== '' && longitude !== '') {
+        const coordErr = validateCoordinates(latitude, longitude);
+        if (!coordErr) {
+          checkInLat = parseFloat(latitude);
+          checkInLon = parseFloat(longitude);
+          checkInAccuracy = accuracy !== undefined && accuracy !== null && accuracy !== '' ? parseFloat(accuracy) : null;
+          const evalResult = await evaluateLocationAgainstOffices(checkInLat, checkInLon, conn);
+          checkInOfficeId = evalResult.nearestOffice?.id || null;
+          checkInDistance = evalResult.distanceMeters;
+        }
+      }
+    }
+
+    // Detect suspicious patterns (e.g. static mock coordinates, marginal accuracy)
+    const suspiciousCheck = await detectSuspiciousLocation({
+      employeeId,
+      checkInLat,
+      checkInLon,
+      accuracy: checkInAccuracy,
+      connection: conn
+    });
+
+    const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
+    const userAgent = req.headers['user-agent'] ? String(req.headers['user-agent']).slice(0, 255) : null;
+
+    // 4. Determine late status using ONE SHARED FUNCTION
     const { isLate, lateMinutes, status } = calculateLateStatus(now, shift);
 
-    const [result] = await pool.query(
-      `INSERT INTO attendance (employee_id, shift_id, date, check_in, is_late, late_minutes, status)
-       VALUES (?, ?, ?, NOW(), ?, ?, ?)`,
-      [employeeId, shift.id || null, shiftDate, isLate ? 1 : 0, lateMinutes, status]
+    const [result] = await conn.query(
+      `INSERT INTO attendance (
+        employee_id, shift_id, date, check_in, is_late, late_minutes, status,
+        check_in_latitude, check_in_longitude, check_in_accuracy,
+        check_in_office_id, check_in_distance, check_in_location_status,
+        check_in_ip_address, check_in_user_agent,
+        is_flagged_suspicious, suspicious_reason
+      ) VALUES (?, ?, ?, NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        employeeId,
+        shift.id || null,
+        shiftDate,
+        isLate ? 1 : 0,
+        lateMinutes,
+        status,
+        checkInLat,
+        checkInLon,
+        checkInAccuracy,
+        checkInOfficeId,
+        checkInDistance,
+        checkInLocationStatus,
+        ipAddress,
+        userAgent,
+        suspiciousCheck.isSuspicious ? 1 : 0,
+        suspiciousCheck.reason
+      ]
     );
 
     const newId = result.insertId;
+    await conn.commit();
+    conn.release();
 
     const [savedRows] = await pool.query('SELECT * FROM attendance WHERE id = ?', [newId]);
     const savedRecord = savedRows[0];
 
-    // Log audit if late
-    if (isLate) {
+    // Log audit if late or flagged suspicious
+    if (isLate || suspiciousCheck.isSuspicious) {
+      const details = [];
+      if (isLate) details.push(`Late check-in (${lateMinutes} mins late against ${shift.name}) on ${savedRecord.date}`);
+      if (suspiciousCheck.isSuspicious) details.push(`Location flagged suspicious: ${suspiciousCheck.reason}`);
       logAudit({
         req,
         action: 'CREATE',
         entityType: 'ATTENDANCE',
         entityId: newId,
         employeeName: employee.name,
-        details: `Late check-in recorded (${lateMinutes} mins late against ${shift.name}) on ${savedRecord.date}`
+        details: details.join('; ')
       }).catch(() => {});
     }
 
@@ -240,9 +377,19 @@ router.post('/check-in', async (req, res) => {
         ? `Check-in recorded. Marked late by ${lateMinutes} minutes.`
         : 'Check-in recorded successfully on time.',
       attendance: savedRecord,
-      shift
+      shift,
+      location: {
+        status: checkInLocationStatus,
+        distance: checkInDistance,
+        officeId: checkInOfficeId,
+        isSuspicious: suspiciousCheck.isSuspicious
+      }
     });
   } catch (error) {
+    if (conn) {
+      await conn.rollback();
+      conn.release();
+    }
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ message: 'You have already checked in for today.' });
     }
@@ -254,17 +401,28 @@ router.post('/check-in', async (req, res) => {
  * POST /api/attendance/check-out
  * Records check-out. Supports night shifts crossing midnight:
  * checkout after midnight still belongs to the shift's start date.
+ * Enforces location verification, geofence radius, and jump-velocity anomaly checks.
  */
-router.post('/check-out', async (req, res) => {
-  try {
-    const employeeId = await resolveEmployeeId(req);
-    if (!employeeId) {
-      return res.status(400).json({ message: 'No linked employee profile found for your account.' });
-    }
+router.post('/check-out', attendanceLimiter, async (req, res) => {
+  let employeeId = req.user.employee_id;
+  if (!employeeId) {
+    const [matched] = await pool.query(
+      'SELECT id FROM employees WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL',
+      [req.user.email]
+    );
+    if (matched.length > 0) employeeId = matched[0].id;
+  }
 
+  if (!employeeId) {
+    return res.status(400).json({ message: 'No linked employee profile found for your account.' });
+  }
+
+  const conn = await pool.getConnection();
+  await conn.beginTransaction();
+  try {
     // 1. Fetch active check-in (open session where check_out is NULL)
-    const [existing] = await pool.query(
-      `SELECT a.*, e.name AS employee_name
+    const [existing] = await conn.query(
+      `SELECT a.*, e.name AS employee_name, e.department_id
        FROM attendance a
        JOIN employees e ON a.employee_id = e.id
        WHERE a.employee_id = ? AND a.check_out IS NULL
@@ -274,6 +432,8 @@ router.post('/check-out', async (req, res) => {
     );
 
     if (existing.length === 0) {
+      await conn.rollback();
+      conn.release();
       // Check if already checked out today
       const [doneToday] = await pool.query(
         'SELECT id, check_in, check_out FROM attendance WHERE employee_id = ? AND date = CURDATE()',
@@ -295,6 +455,8 @@ router.post('/check-out', async (req, res) => {
 
     // 2. Prevent duplicate checkout
     if (record.check_out) {
+      await conn.rollback();
+      conn.release();
       return res.status(400).json({
         message: 'You have already checked out for today.',
         alreadyCheckedOut: true,
@@ -307,12 +469,101 @@ router.post('/check-out', async (req, res) => {
 
     // 3. Prevent invalid checkout times (must be strictly after check_in)
     if (now.getTime() <= checkInTime.getTime()) {
+      await conn.rollback();
+      conn.release();
       return res.status(400).json({
         message: 'Check-out time must be after check-in time.'
       });
     }
 
-    // 4. Calculate total working hours deducting break minutes and check for short day
+    // 4. Geolocation & Exemption Verification for check-out
+    const { isExempt } = await isLocationExempt(employeeId, record.department_id, record.date, conn);
+    const { latitude, longitude, accuracy } = req.body || {};
+
+    let checkOutLat = null;
+    let checkOutLon = null;
+    let checkOutAccuracy = null;
+    let checkOutOfficeId = null;
+    let checkOutDistance = null;
+    let checkOutLocationStatus = 'no_location';
+
+    if (!isExempt) {
+      if (latitude === undefined || latitude === null || longitude === undefined || longitude === null || latitude === '' || longitude === '') {
+        await conn.rollback();
+        conn.release();
+        return res.status(400).json({
+          message: 'Location access is required for attendance check-out. Please enable GPS/location services on your device and retry.'
+        });
+      }
+
+      const coordError = validateCoordinates(latitude, longitude);
+      if (coordError) {
+        await conn.rollback();
+        conn.release();
+        return res.status(400).json({ message: coordError });
+      }
+
+      checkOutLat = parseFloat(latitude);
+      checkOutLon = parseFloat(longitude);
+      checkOutAccuracy = accuracy !== undefined && accuracy !== null && accuracy !== '' ? parseFloat(accuracy) : null;
+
+      if (checkOutAccuracy !== null && checkOutAccuracy > MAX_GPS_ACCURACY_METERS) {
+        await conn.rollback();
+        conn.release();
+        return res.status(400).json({
+          message: `GPS accuracy (${Math.round(checkOutAccuracy)}m) is too poor. Must be within ${MAX_GPS_ACCURACY_METERS}m. Please move outdoors or near a window and retry.`
+        });
+      }
+
+      const evalResult = await evaluateLocationAgainstOffices(checkOutLat, checkOutLon, conn);
+      if (!evalResult.isInsideAny) {
+        await conn.rollback();
+        conn.release();
+        const officeName = evalResult.nearestOffice?.name || 'Office';
+        const allowedRad = evalResult.nearestOffice?.allowed_radius || 100;
+        return res.status(403).json({
+          message: `Check-out rejected: You are ${Math.round(evalResult.distanceMeters)}m away from ${officeName}, which exceeds the allowed radius of ${allowedRad}m.`,
+          distance: evalResult.distanceMeters,
+          allowedRadius: allowedRad,
+          nearestOffice: officeName
+        });
+      }
+
+      checkOutLocationStatus = 'inside';
+      checkOutOfficeId = evalResult.insideOffice?.id || evalResult.nearestOffice?.id || null;
+      checkOutDistance = evalResult.distanceMeters;
+    } else {
+      checkOutLocationStatus = 'exempt';
+      if (latitude !== undefined && latitude !== null && longitude !== undefined && longitude !== null && latitude !== '' && longitude !== '') {
+        const coordErr = validateCoordinates(latitude, longitude);
+        if (!coordErr) {
+          checkOutLat = parseFloat(latitude);
+          checkOutLon = parseFloat(longitude);
+          checkOutAccuracy = accuracy !== undefined && accuracy !== null && accuracy !== '' ? parseFloat(accuracy) : null;
+          const evalResult = await evaluateLocationAgainstOffices(checkOutLat, checkOutLon, conn);
+          checkOutOfficeId = evalResult.nearestOffice?.id || null;
+          checkOutDistance = evalResult.distanceMeters;
+        }
+      }
+    }
+
+    // Detect suspicious patterns (including impossible velocity jump between check-in and check-out)
+    const suspiciousCheck = await detectSuspiciousLocation({
+      employeeId,
+      checkInLat: record.check_in_latitude,
+      checkInLon: record.check_in_longitude,
+      checkOutLat,
+      checkOutLon,
+      checkInTime: record.check_in,
+      checkOutTime: now,
+      accuracy: checkOutAccuracy,
+      connection: conn
+    });
+
+    const ipAddress = req.ip || req.headers['x-forwarded-for'] || req.socket?.remoteAddress || null;
+    const userAgent = req.headers['user-agent'] ? String(req.headers['user-agent']).slice(0, 255) : null;
+
+    // 5. Calculate total working hours deducting break minutes and check for short day
     const shift = await getEmployeeShift(employeeId, record.date);
     const { totalHours, isShortDay } = calculateWorkingHoursAndShortDay(checkInTime, now, shift);
 
@@ -321,22 +572,75 @@ router.post('/check-out', async (req, res) => {
       finalStatus = 'Half Day';
     }
 
-    await pool.query(
+    await conn.query(
       `UPDATE attendance 
-       SET check_out = NOW(), total_hours = ?, is_short_day = ?, status = ?
+       SET check_out = NOW(),
+           total_hours = ?,
+           is_short_day = ?,
+           status = ?,
+           check_out_latitude = ?,
+           check_out_longitude = ?,
+           check_out_accuracy = ?,
+           check_out_office_id = ?,
+           check_out_distance = ?,
+           check_out_location_status = ?,
+           check_out_ip_address = ?,
+           check_out_user_agent = ?,
+           is_flagged_suspicious = CASE WHEN ? = 1 THEN 1 ELSE is_flagged_suspicious END,
+           suspicious_reason = CASE WHEN ? IS NOT NULL THEN ? ELSE suspicious_reason END
        WHERE id = ?`,
-      [totalHours, isShortDay ? 1 : 0, finalStatus, record.id]
+      [
+        totalHours,
+        isShortDay ? 1 : 0,
+        finalStatus,
+        checkOutLat,
+        checkOutLon,
+        checkOutAccuracy,
+        checkOutOfficeId,
+        checkOutDistance,
+        checkOutLocationStatus,
+        ipAddress,
+        userAgent,
+        suspiciousCheck.isSuspicious ? 1 : 0,
+        suspiciousCheck.reason,
+        suspiciousCheck.reason,
+        record.id
+      ]
     );
+
+    await conn.commit();
+    conn.release();
 
     const [updatedRows] = await pool.query('SELECT * FROM attendance WHERE id = ?', [record.id]);
     const updatedRecord = updatedRows[0];
 
+    if (suspiciousCheck.isSuspicious) {
+      logAudit({
+        req,
+        action: 'UPDATE',
+        entityType: 'ATTENDANCE',
+        entityId: record.id,
+        employeeName: record.employee_name,
+        details: `Suspicious location flag on checkout: ${suspiciousCheck.reason}`
+      }).catch(() => {});
+    }
+
     res.json({
       message: `Check-out recorded successfully. Total working time: ${totalHours} hours.${isShortDay ? ' (Flagged as Short Day)' : ''}`,
       attendance: updatedRecord,
-      shift
+      shift,
+      location: {
+        status: checkOutLocationStatus,
+        distance: checkOutDistance,
+        officeId: checkOutOfficeId,
+        isSuspicious: suspiciousCheck.isSuspicious
+      }
     });
   } catch (error) {
+    if (conn) {
+      await conn.rollback();
+      conn.release();
+    }
     res.status(500).json({ message: 'Failed to record check-out.', error: error.message });
   }
 });
@@ -487,11 +791,29 @@ router.get('/history', async (req, res) => {
         a.status,
         a.is_corrected,
         a.notes,
-        a.created_at
+        a.created_at,
+        a.check_in_latitude,
+        a.check_in_longitude,
+        a.check_in_accuracy,
+        a.check_in_office_id,
+        o_in.name AS check_in_office_name,
+        a.check_in_distance,
+        a.check_in_location_status,
+        a.check_out_latitude,
+        a.check_out_longitude,
+        a.check_out_accuracy,
+        a.check_out_office_id,
+        o_out.name AS check_out_office_name,
+        a.check_out_distance,
+        a.check_out_location_status,
+        a.is_flagged_suspicious,
+        a.suspicious_reason
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
       LEFT JOIN departments d ON e.department_id = d.id
       LEFT JOIN shifts s ON a.shift_id = s.id
+      LEFT JOIN office_locations o_in ON a.check_in_office_id = o_in.id
+      LEFT JOIN office_locations o_out ON a.check_out_office_id = o_out.id
       ${whereClause}
       ORDER BY ${sortCol} ${sortDir}, a.check_in DESC
       LIMIT ? OFFSET ?

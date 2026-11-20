@@ -22,6 +22,7 @@ const leaveRoutes = require('./routes/leaves');
 const workforceRoutes = require('./routes/workforce');
 const payrollRoutes = require('./routes/payroll');
 const shiftRoutes = require('./routes/shifts');
+const officeRoutes = require('./routes/offices');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./docs/swaggerSpec');
 
@@ -133,6 +134,7 @@ app.use('/api/leaves', leaveRoutes);
 app.use('/api/workforce', workforceRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/shifts', shiftRoutes);
+app.use('/api/offices', officeRoutes);
 
 // Health check route
 app.get('/api/health', async (req, res) => {

@@ -16,7 +16,8 @@ import {
   TrendingUp,
   DollarSign,
   FileText,
-  CalendarDays
+  CalendarDays,
+  MapPin
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import './Sidebar.css';
@@ -135,6 +136,11 @@ const Sidebar = () => {
       to: '/shifts',
       label: 'Shifts',
       icon: CalendarDays,
+    },
+    {
+      to: '/offices',
+      label: 'Offices & Map',
+      icon: MapPin,
     },
     {
       to: '/leaves',

@@ -25,7 +25,9 @@ import {
   X,
   Building2,
   Check,
-  AlertCircle
+  AlertCircle,
+  MapPin,
+  Navigation
 } from 'lucide-react';
 import './Attendance.css';
 
@@ -49,6 +51,12 @@ const Attendance = () => {
     employeeId: null
   });
   const [punching, setPunching] = useState(false);
+
+  // Geolocation & Exemption State
+  const [locationLoading, setLocationLoading] = useState(false);
+  const [locationError, setLocationError] = useState(null);
+  const [isExempt, setIsExempt] = useState(false);
+  const [exemptionDetails, setExemptionDetails] = useState(null);
 
   // Departments List for Filters
   const [departments, setDepartments] = useState([]);
@@ -125,7 +133,69 @@ const Attendance = () => {
       .then((res) => setDepartments(res.data || []))
       .catch((err) => console.error('Failed to load departments', err));
 
+    api.get('/offices/exemptions/check-self')
+      .then((res) => {
+        setIsExempt(Boolean(res.data?.isExempt));
+        setExemptionDetails(res.data?.exemption || null);
+      })
+      .catch(() => {});
+
     fetchTodayStatus();
+  }, []);
+
+  // Browser Geolocation Helper
+  const obtainGeolocation = useCallback(() => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        const err = {
+          message: 'Geolocation is not supported by your browser.',
+          guide: 'Please use a modern browser (such as Chrome, Edge, Firefox, or Safari) to record attendance.'
+        };
+        setLocationError(err);
+        reject(err);
+        return;
+      }
+
+      setLocationLoading(true);
+      setLocationError(null);
+
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setLocationLoading(false);
+          const coords = {
+            latitude: pos.coords.latitude,
+            longitude: pos.coords.longitude,
+            accuracy: pos.coords.accuracy
+          };
+          resolve(coords);
+        },
+        (err) => {
+          setLocationLoading(false);
+          let message = 'Unable to determine your location.';
+          let guide = '';
+
+          if (err.code === 1) { // PERMISSION_DENIED
+            message = 'Location access permission was denied.';
+            guide = 'Please click the site permissions icon in your browser address bar (lock icon), set Location to "Allow", and click Retry Location.';
+          } else if (err.code === 2) { // POSITION_UNAVAILABLE
+            message = 'GPS / Location position unavailable.';
+            guide = 'Please ensure device location services are enabled or step outdoors / near a window for better satellite reception.';
+          } else if (err.code === 3) { // TIMEOUT
+            message = 'Location request timed out.';
+            guide = 'Location lookup took longer than 10 seconds. Check your internet connection and click Retry Location.';
+          }
+
+          const fullErr = { message, guide, code: err.code };
+          setLocationError(fullErr);
+          reject(fullErr);
+        },
+        {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0
+        }
+      );
+    });
   }, []);
 
   // Fetch today's punch status
@@ -142,8 +212,31 @@ const Attendance = () => {
   const handleCheckIn = async () => {
     try {
       setPunching(true);
-      const res = await api.post('/attendance/check-in', {});
+      let coords = null;
+
+      if (!isExempt) {
+        try {
+          coords = await obtainGeolocation();
+        } catch (geoErr) {
+          setPunching(false);
+          return; // Error message already stored in locationError
+        }
+      } else if (navigator.geolocation) {
+        // Optional non-blocking capture for exempt staff
+        try {
+          coords = await new Promise((res) => {
+            navigator.geolocation.getCurrentPosition(
+              (p) => res({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy }),
+              () => res(null),
+              { timeout: 3000 }
+            );
+          });
+        } catch (e) {}
+      }
+
+      const res = await api.post('/attendance/check-in', coords || {});
       success(res.data.message || 'Check-in recorded successfully!');
+      setLocationError(null);
       await fetchTodayStatus();
       if (activeTab === 'logs') fetchLogs();
     } catch (err) {
@@ -158,8 +251,31 @@ const Attendance = () => {
   const handleCheckOut = async () => {
     try {
       setPunching(true);
-      const res = await api.post('/attendance/check-out', {});
+      let coords = null;
+
+      if (!isExempt) {
+        try {
+          coords = await obtainGeolocation();
+        } catch (geoErr) {
+          setPunching(false);
+          return; // Error message already stored in locationError
+        }
+      } else if (navigator.geolocation) {
+        // Optional non-blocking capture for exempt staff
+        try {
+          coords = await new Promise((res) => {
+            navigator.geolocation.getCurrentPosition(
+              (p) => res({ latitude: p.coords.latitude, longitude: p.coords.longitude, accuracy: p.coords.accuracy }),
+              () => res(null),
+              { timeout: 3000 }
+            );
+          });
+        } catch (e) {}
+      }
+
+      const res = await api.post('/attendance/check-out', coords || {});
       success(res.data.message || 'Check-out recorded successfully!');
+      setLocationError(null);
       await fetchTodayStatus();
       if (activeTab === 'logs') fetchLogs();
     } catch (err) {
@@ -432,6 +548,27 @@ const Attendance = () => {
                   </span>
                 ) : null}
 
+                {isExempt && (
+                  <span className="badge badge-active" style={{ background: '#eff6ff', color: '#1d4ed8', borderColor: '#bfdbfe' }} title={`Location Exempt: ${exemptionDetails?.reason || 'Approved'}`}>
+                    <MapPin size={12} />
+                    <span>Exempt (Remote)</span>
+                  </span>
+                )}
+
+                {todayStatus.record?.check_in_office_name && (
+                  <span className="badge badge-inactive" style={{ background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0' }} title={`Checked in at ${todayStatus.record.check_in_office_name} (${Math.round(todayStatus.record.check_in_distance || 0)}m, accuracy ±${Math.round(todayStatus.record.check_in_accuracy || 0)}m)`}>
+                    <MapPin size={12} />
+                    <span>{todayStatus.record.check_in_office_name} ({Math.round(todayStatus.record.check_in_distance || 0)}m)</span>
+                  </span>
+                )}
+
+                {todayStatus.record?.is_flagged_suspicious ? (
+                  <span className="badge badge-late" style={{ background: '#fef2f2', color: '#991b1b', borderColor: '#fecaca' }} title={todayStatus.record.suspicious_reason}>
+                    <AlertTriangle size={12} />
+                    <span>Flagged: {todayStatus.record.suspicious_reason}</span>
+                  </span>
+                ) : null}
+
                 {todayStatus.shift && (
                   <span className="badge badge-inactive" style={{ background: '#f8fafc', color: 'var(--text-secondary)' }} title="Assigned daily shift">
                     <Clock size={12} />
@@ -464,6 +601,26 @@ const Attendance = () => {
             </div>
 
             <div className="punch-actions-col">
+              {locationError && (
+                <div className="attendance-geo-error" role="alert">
+                  <div className="attendance-geo-error-msg">
+                    <AlertCircle size={16} className="text-danger" />
+                    <div>
+                      <strong>{locationError.message}</strong>
+                      {locationError.guide && <p className="attendance-geo-guide">{locationError.guide}</p>}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => obtainGeolocation()}
+                    className="btn btn-secondary btn-xs attendance-geo-retry"
+                  >
+                    <RotateCcw size={12} />
+                    <span>Retry Location</span>
+                  </button>
+                </div>
+              )}
+
               <button
                 type="button"
                 onClick={handleCheckIn}
@@ -472,7 +629,7 @@ const Attendance = () => {
                 title={todayStatus.hasCheckedIn ? 'Already checked in for today' : 'Check in for today'}
               >
                 <LogIn size={16} />
-                <span>{punching ? 'Recording...' : 'Check In'}</span>
+                <span>{punching ? (locationLoading ? 'Locating...' : 'Recording...') : 'Check In'}</span>
               </button>
 
               <button
@@ -489,7 +646,7 @@ const Attendance = () => {
                 }
               >
                 <LogOut size={16} />
-                <span>{punching ? 'Recording...' : 'Check Out'}</span>
+                <span>{punching ? (locationLoading ? 'Locating...' : 'Recording...') : 'Check Out'}</span>
               </button>
             </div>
           </div>
@@ -642,6 +799,7 @@ const Attendance = () => {
                       <th className="attendance-th">Check In</th>
                       <th className="attendance-th">Check Out</th>
                       <th className="attendance-th">Hours</th>
+                      <th className="attendance-th">Location</th>
                       <th className="attendance-th">Status</th>
                       <th className="attendance-th">Correction</th>
                     </tr>
@@ -649,13 +807,13 @@ const Attendance = () => {
                   <tbody>
                     {logsLoading ? (
                       <tr>
-                        <td colSpan="8" className="attendance-empty-cell">
+                        <td colSpan="9" className="attendance-empty-cell">
                           Loading attendance records...
                         </td>
                       </tr>
                     ) : logs.length === 0 ? (
                       <tr>
-                        <td colSpan="8" className="attendance-empty-cell">
+                        <td colSpan="9" className="attendance-empty-cell">
                           No attendance records match the selected filters.
                         </td>
                       </tr>
@@ -691,6 +849,26 @@ const Attendance = () => {
                             <span className="hours-chip">
                               {Number(record.total_hours || 0).toFixed(2)}h
                             </span>
+                          </td>
+                          <td className="attendance-td">
+                            {record.check_in_location_status === 'inside' ? (
+                              <span className="badge badge-office-tag" title={`Distance: ${Math.round(record.check_in_distance || 0)}m to ${record.check_in_office_name || 'Office'}`}>
+                                <MapPin size={11} />
+                                <span>{record.check_in_office_name || 'Office'} ({Math.round(record.check_in_distance || 0)}m)</span>
+                              </span>
+                            ) : record.check_in_location_status === 'exempt' ? (
+                              <span className="badge badge-exempt-tag" title="Location exempt (Remote/Field)">
+                                <MapPin size={11} />
+                                <span>Exempt</span>
+                              </span>
+                            ) : record.check_in_location_status === 'outside' ? (
+                              <span className="badge badge-late" title="Check-in outside office geofence">
+                                <AlertTriangle size={11} />
+                                <span>Outside</span>
+                              </span>
+                            ) : (
+                              <span className="text-muted text-xs">—</span>
+                            )}
                           </td>
                           <td className="attendance-td">
                             <span className={`badge ${

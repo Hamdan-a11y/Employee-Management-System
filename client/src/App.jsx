@@ -22,6 +22,7 @@ import Headcount from './pages/Headcount';
 import Payroll from './pages/Payroll';
 import MyPayslips from './pages/MyPayslips';
 import Shifts from './pages/Shifts';
+import OfficeLocations from './pages/OfficeLocations';
 
 function App() {
   return (
@@ -114,6 +115,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <Attendance />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/offices"
+            element={
+              <ProtectedRoute>
+                <OfficeLocations />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/attendance/map"
+            element={
+              <ProtectedRoute>
+                <OfficeLocations />
               </ProtectedRoute>
             }
           />

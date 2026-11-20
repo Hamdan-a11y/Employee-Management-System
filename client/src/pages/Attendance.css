@@ -588,3 +588,59 @@
   color: var(--primary);
 }
 
+/* Geolocation Error & Status Elements */
+.attendance-geo-error {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 10px 14px;
+  background-color: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: var(--radius-md);
+  margin-bottom: var(--space-2);
+  width: 100%;
+}
+
+.attendance-geo-error-msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 0.8rem;
+  color: #991b1b;
+}
+
+.attendance-geo-guide {
+  font-size: 0.75rem;
+  color: #b91c1c;
+  margin-top: 2px;
+  line-height: 1.35;
+}
+
+.attendance-geo-retry {
+  align-self: flex-start;
+  margin-left: 24px;
+}
+
+.badge-office-tag {
+  background-color: #ecfdf5;
+  color: #047857;
+  border: 1px solid #a7f3d0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  padding: 2px 6px;
+}
+
+.badge-exempt-tag {
+  background-color: #eff6ff;
+  color: #1e40af;
+  border: 1px solid #bfdbfe;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  padding: 2px 6px;
+}
+
+

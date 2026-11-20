@@ -37,6 +37,11 @@ const PERMISSIONS = {
   SHIFT_VIEW: 'shift.view',
   SHIFT_MANAGE: 'shift.manage',
   SHIFT_ASSIGN: 'shift.assign',
+
+  // Geolocation & Offices
+  LOCATION_VIEW: 'location.view',
+  LOCATION_MANAGE: 'location.manage',
+  LOCATION_EXEMPT: 'location.exempt',
 };
 
 const ROLE_PERMISSIONS = {
@@ -63,6 +68,9 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.SHIFT_VIEW,
     PERMISSIONS.SHIFT_MANAGE,
     PERMISSIONS.SHIFT_ASSIGN,
+    PERMISSIONS.LOCATION_VIEW,
+    PERMISSIONS.LOCATION_MANAGE,
+    PERMISSIONS.LOCATION_EXEMPT,
   ],
 
   department_manager: [
@@ -77,6 +85,7 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.LEAVE_MANAGE,    // Scoped to own department
     PERMISSIONS.SHIFT_VIEW,      // Scoped to own department
     PERMISSIONS.SHIFT_ASSIGN,    // Scoped to own department
+    PERMISSIONS.LOCATION_VIEW,   // Scoped to own department
   ],
 
   employee: [
@@ -84,6 +93,7 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.ATTENDANCE_PUNCH,
     PERMISSIONS.LEAVE_REQUEST,
     PERMISSIONS.SHIFT_VIEW,      // Scoped to own shift
+    PERMISSIONS.LOCATION_VIEW,   // Scoped to own check-in locations
   ],
 };
 
