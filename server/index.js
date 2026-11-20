@@ -27,6 +27,8 @@ const holidayRoutes = require('./routes/holidays');
 const workingWeekRoutes = require('./routes/workingWeek');
 const calendarRoutes = require('./routes/calendar');
 const overtimeRoutes = require('./routes/overtime');
+const jobRoutes = require('./routes/jobs');
+const { initializeScheduler } = require('./jobs/scheduler');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./docs/swaggerSpec');
 
@@ -143,6 +145,7 @@ app.use('/api/holidays', holidayRoutes);
 app.use('/api/working-week', workingWeekRoutes);
 app.use('/api/calendar', calendarRoutes);
 app.use('/api/overtime', overtimeRoutes);
+app.use('/api/jobs', jobRoutes);
 
 // Health check route
 app.get('/api/health', async (req, res) => {
@@ -175,6 +178,8 @@ let server = null;
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   server = app.listen(PORT, () => {
     logger.info(`Server running on http://localhost:${PORT} in [${process.env.NODE_ENV || 'development'}] mode`);
+    // Initialize node-cron automated background jobs and catch-up check
+    initializeScheduler();
   });
 }
 

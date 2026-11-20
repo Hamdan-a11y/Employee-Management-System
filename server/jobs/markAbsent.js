@@ -119,13 +119,14 @@ async function executeMarkAbsent(context = {}) {
           employee_id,
           shift_id,
           date,
+          check_in,
           status,
           total_hours,
           is_late,
           late_minutes,
           is_short_day,
           notes
-        ) VALUES (?, ?, ?, 'Absent', 0.00, 0, 0, 0, 'Automated: Marked absent after shift ended without check-in')`,
+        ) VALUES (?, ?, ?, NULL, 'Absent', 0.00, 0, 0, 0, 'Automated: Marked absent after shift ended without check-in')`,
         [emp.id, shift?.id || null, targetDate]
       );
 

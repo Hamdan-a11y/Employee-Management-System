@@ -27,6 +27,7 @@ import Holidays from './pages/Holidays';
 import WorkingWeek from './pages/WorkingWeek';
 import TeamCalendar from './pages/TeamCalendar';
 import Overtime from './pages/Overtime';
+import JobRuns from './pages/JobRuns';
 
 function App() {
   return (
@@ -250,6 +251,15 @@ function App() {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/admin/jobs"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <JobRuns />
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/jobs" element={<Navigate to="/admin/jobs" replace />} />
 
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

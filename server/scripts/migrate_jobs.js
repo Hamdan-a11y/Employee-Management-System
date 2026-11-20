@@ -42,7 +42,10 @@ async function migrateJobs() {
   `);
   console.log('Created or verified table: daily_summaries');
 
-  // 3. Add is_missing_checkout column to attendance if not exists
+  // 3. Add is_missing_checkout column to attendance if not exists, and allow check_in to be NULL for absent records
+  await pool.query('ALTER TABLE attendance MODIFY COLUMN check_in DATETIME NULL');
+  console.log('Modified attendance.check_in to allow NULL for absent records');
+
   const [cols] = await pool.query("SHOW COLUMNS FROM attendance LIKE 'is_missing_checkout'");
   if (cols.length === 0) {
     await pool.query(`

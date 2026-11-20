@@ -21,7 +21,8 @@ import {
   CalendarRange,
   Sliders,
   Sun,
-  Timer
+  Timer,
+  Cpu
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import './Sidebar.css';
@@ -194,6 +195,11 @@ const Sidebar = () => {
   });
 
   if (isAdmin) {
+    navItems.push({
+      to: '/admin/jobs',
+      label: 'Background Jobs',
+      icon: Cpu,
+    });
     navItems.push({
       to: '/employees/deleted',
       label: 'Deleted Archive',

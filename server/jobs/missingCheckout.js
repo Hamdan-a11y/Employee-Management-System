@@ -109,10 +109,14 @@ async function executeMissingCheckout(context = {}) {
 
   for (const record of records) {
     const shift = await getEmployeeShift(record.employee_id, record.date);
+    const recDate = typeof record.date === 'string' 
+      ? record.date.slice(0, 10) 
+      : (record.date instanceof Date ? record.date.toISOString().slice(0, 10) : String(record.date));
+
     const missing = isMissingCheckout(
       shift,
       record.check_in,
-      record.date,
+      recDate,
       karachiDate,
       karachiTime,
       bufferMinutes
