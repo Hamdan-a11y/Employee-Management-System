@@ -37,7 +37,7 @@ function formatDate(d) {
  * Returns all working days in a given calendar month ('YYYY-MM').
  * Skips weekends (Saturday, Sunday) and dates in the holidaysSet.
  */
-function getWorkingDaysInMonth(yearMonth, holidaysSet = new Set()) {
+function getWorkingDaysInMonth(yearMonth, holidaysSet = new Set(), workingWeekConfig = null) {
   const [yearStr, monthStr] = yearMonth.split('-');
   const year = parseInt(yearStr, 10);
   const month = parseInt(monthStr, 10); // 1 to 12
@@ -49,8 +49,19 @@ function getWorkingDaysInMonth(yearMonth, holidaysSet = new Set()) {
     const dateObj = new Date(year, month - 1, day);
     const dayOfWeek = dateObj.getDay(); // 0 = Sun, 6 = Sat
 
-    // Skip Saturday and Sunday
-    if (dayOfWeek === 0 || dayOfWeek === 6) {
+    // Check working week config if provided, otherwise default to skipping Sat & Sun
+    if (workingWeekConfig) {
+      const isWorking = (
+        (dayOfWeek === 0 && workingWeekConfig.sunday) ||
+        (dayOfWeek === 1 && workingWeekConfig.monday) ||
+        (dayOfWeek === 2 && workingWeekConfig.tuesday) ||
+        (dayOfWeek === 3 && workingWeekConfig.wednesday) ||
+        (dayOfWeek === 4 && workingWeekConfig.thursday) ||
+        (dayOfWeek === 5 && workingWeekConfig.friday) ||
+        (dayOfWeek === 6 && workingWeekConfig.saturday)
+      );
+      if (!isWorking) continue;
+    } else if (dayOfWeek === 0 || dayOfWeek === 6) {
       continue;
     }
 
@@ -119,6 +130,7 @@ function calculateEmployeePayslip({
   workingDaysData,
   attendanceRecords = [],
   leaveRequests = [],
+  overtimeRequests = null,
   pendingAdjustments = [],
   prevMonthPayslip = null,
   settings = {
@@ -364,33 +376,51 @@ function calculateEmployeePayslip({
     }
   }
 
-  // 4. Overtime calculation
-  const overtimeMultiplier = Number(settings.overtime_multiplier) || 1.5;
+  // 4. Overtime calculation (APPROVED overtime only)
   let totalOvertimeHours = 0;
-  const overtimeAttendanceIds = [];
+  let overtimePay = 0;
+  let overtimeMultiplier = Number(settings.overtime_multiplier) || 1.5;
+  const overtimeEntityIds = [];
 
-  for (const record of attendanceRecords) {
-    const hrs = Number(record.total_hours) || 0;
-    if (hrs > standardHours) {
-      const extra = hrs - standardHours;
-      totalOvertimeHours += extra;
-      overtimeAttendanceIds.push(record.id);
+  if (Array.isArray(overtimeRequests)) {
+    // Strictly filter by APPROVED status
+    const approvedOt = overtimeRequests.filter(
+      (r) => r.status && r.status.toLowerCase() === 'approved'
+    );
+    for (const ot of approvedOt) {
+      const otHours = (Number(ot.minutes) || 0) / 60.0;
+      const mult = Number(ot.multiplier) || overtimeMultiplier;
+      const pay = roundToTwo(otHours * hourlyRate * mult);
+      totalOvertimeHours += otHours;
+      overtimePay += pay;
+      overtimeEntityIds.push(ot.id);
     }
+    totalOvertimeHours = Math.round(totalOvertimeHours * 100) / 100;
+    overtimePay = roundToTwo(overtimePay);
+  } else {
+    // Fallback if overtimeRequests not provided (for backward compatibility)
+    for (const record of attendanceRecords) {
+      const hrs = Number(record.total_hours) || 0;
+      if (hrs > standardHours) {
+        const extra = hrs - standardHours;
+        totalOvertimeHours += extra;
+        overtimeEntityIds.push(record.id);
+      }
+    }
+    totalOvertimeHours = Math.round(totalOvertimeHours * 100) / 100;
+    overtimePay = roundToTwo(totalOvertimeHours * hourlyRate * overtimeMultiplier);
   }
-
-  totalOvertimeHours = Math.round(totalOvertimeHours * 100) / 100;
-  const overtimePay = roundToTwo(totalOvertimeHours * hourlyRate * overtimeMultiplier);
 
   if (totalOvertimeHours > 0) {
     lineItems.push({
       category: 'EARNING',
       type: 'OVERTIME',
-      description: `Overtime (${totalOvertimeHours.toFixed(2)} hrs @ ${overtimeMultiplier}x of hourly rate PKR ${hourlyRate.toFixed(2)})`,
+      description: `Overtime (${totalOvertimeHours.toFixed(2)} hrs @ approved multiplier of hourly rate PKR ${hourlyRate.toFixed(2)})`,
       amount: overtimePay,
       rate: roundToTwo(hourlyRate * overtimeMultiplier),
       quantity: totalOvertimeHours,
-      related_entity_type: 'ATTENDANCE',
-      related_entity_ids: overtimeAttendanceIds
+      related_entity_type: Array.isArray(overtimeRequests) ? 'OVERTIME_REQUEST' : 'ATTENDANCE',
+      related_entity_ids: overtimeEntityIds
     });
   }
 

@@ -229,6 +229,7 @@ router.get('/overtime', async (req, res) => {
     }
 
     // Single query using LEFT JOIN to ensure departments with no attendance still show
+    // Overtime signal is driven strictly by APPROVED overtime requests
     let sql = `
       SELECT 
         d.id,
@@ -236,7 +237,7 @@ router.get('/overtime', async (req, res) => {
         COUNT(CASE WHEN a.check_in IS NOT NULL AND a.check_out IS NOT NULL THEN 1 ELSE NULL END) AS attendance_days,
         AVG(CASE 
           WHEN a.check_in IS NOT NULL AND a.check_out IS NOT NULL 
-          THEN (CASE WHEN a.total_hours > 0 THEN a.total_hours ELSE GREATEST(0, TIMESTAMPDIFF(SECOND, a.check_in, a.check_out) / 3600.0) END)
+          THEN (LEAST(8.0, CASE WHEN a.total_hours > 0 THEN a.total_hours ELSE 8.0 END) + COALESCE(ot.minutes, 0) / 60.0)
           ELSE NULL 
         END) AS avg_daily_hours
       FROM departments d
@@ -245,6 +246,9 @@ router.get('/overtime', async (req, res) => {
         AND a.date >= DATE_SUB(CURDATE(), INTERVAL ? MONTH)
         AND a.check_in IS NOT NULL 
         AND a.check_out IS NOT NULL
+      LEFT JOIN overtime_requests ot ON e.id = ot.employee_id 
+        AND a.date = ot.work_date 
+        AND ot.status = 'approved'
     `;
     const params = [months];
 

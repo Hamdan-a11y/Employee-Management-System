@@ -17,7 +17,11 @@ import {
   DollarSign,
   FileText,
   CalendarDays,
-  MapPin
+  MapPin,
+  CalendarRange,
+  Sliders,
+  Sun,
+  Timer
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import './Sidebar.css';
@@ -138,6 +142,11 @@ const Sidebar = () => {
       icon: CalendarDays,
     },
     {
+      to: '/overtime',
+      label: 'Overtime',
+      icon: Timer,
+    },
+    {
       to: '/offices',
       label: 'Offices & Map',
       icon: MapPin,
@@ -146,8 +155,29 @@ const Sidebar = () => {
       to: '/leaves',
       label: 'Leaves',
       icon: Calendar,
+    },
+    {
+      to: '/holidays',
+      label: 'Holidays',
+      icon: Sun,
     }
   );
+
+  if (isAdmin || isHR || isDeptManager) {
+    navItems.push({
+      to: '/team-calendar',
+      label: 'Team Calendar',
+      icon: CalendarRange,
+    });
+  }
+
+  if (isAdmin || isHR) {
+    navItems.push({
+      to: '/working-week',
+      label: 'Working Week',
+      icon: Sliders,
+    });
+  }
 
   if (isAdmin || isHR) {
     navItems.push({

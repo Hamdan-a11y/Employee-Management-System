@@ -27,7 +27,8 @@ import {
   Check,
   AlertCircle,
   MapPin,
-  Navigation
+  Navigation,
+  CalendarDays
 } from 'lucide-react';
 import './Attendance.css';
 
@@ -113,6 +114,14 @@ const Attendance = () => {
   const [reportData, setReportData] = useState({ report: [], summary: {} });
   const [reportLoading, setReportLoading] = useState(false);
   const [exportingReport, setExportingReport] = useState(false);
+
+  // ==========================================
+  // 4. ATTENDANCE CALENDAR TAB STATE
+  // ==========================================
+  const [calYear, setCalYear] = useState(currentYearNum);
+  const [calMonth, setCalMonth] = useState(currentMonthNum);
+  const [calData, setCalData] = useState(null);
+  const [calLoading, setCalLoading] = useState(false);
 
   // Update live clock every second
   useEffect(() => {
@@ -471,6 +480,53 @@ const Attendance = () => {
     return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
   };
 
+  // ==========================================
+  // FETCH ATTENDANCE CALENDAR
+  // ==========================================
+  const fetchEmployeeCalendar = useCallback(async () => {
+    try {
+      setCalLoading(true);
+      const res = await api.get('/calendar/employee-calendar', {
+        params: { year: calYear, month: calMonth }
+      });
+      setCalData(res.data);
+    } catch (err) {
+      notifyError(err.response?.data?.message || 'Failed to load employee attendance calendar.');
+    } finally {
+      setCalLoading(false);
+    }
+  }, [calYear, calMonth, notifyError]);
+
+  useEffect(() => {
+    if (activeTab === 'calendar') {
+      fetchEmployeeCalendar();
+    }
+  }, [activeTab, fetchEmployeeCalendar]);
+
+  const handlePrevCalMonth = () => {
+    if (calMonth === 1) {
+      setCalMonth(12);
+      setCalYear((prev) => prev - 1);
+    } else {
+      setCalMonth((prev) => prev - 1);
+    }
+  };
+
+  const handleNextCalMonth = () => {
+    if (calMonth === 12) {
+      setCalMonth(1);
+      setCalYear((prev) => prev + 1);
+    } else {
+      setCalMonth((prev) => prev + 1);
+    }
+  };
+
+  const handleTodayCal = () => {
+    const now = new Date();
+    setCalYear(now.getFullYear());
+    setCalMonth(now.getMonth() + 1);
+  };
+
   // Format Date Helper
   const formatDateStr = (isoString) => {
     if (!isoString) return '—';
@@ -679,6 +735,15 @@ const Attendance = () => {
           >
             <Calendar size={16} />
             <span>Monthly Report</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => handleTabChange('calendar')}
+            className={`attendance-tab-btn ${activeTab === 'calendar' ? 'active' : ''}`}
+          >
+            <CalendarDays size={16} />
+            <span>Attendance Calendar</span>
           </button>
         </div>
 
@@ -1281,6 +1346,140 @@ const Attendance = () => {
                   </tbody>
                 </table>
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* ========================================================= */}
+        {/* TAB 4: ATTENDANCE CALENDAR */}
+        {/* ========================================================= */}
+        {activeTab === 'calendar' && (
+          <div className="attendance-tab-content">
+            {/* Toolbar Card */}
+            <div className="card att-cal-toolbar-card">
+              <div className="att-cal-toolbar">
+                <div className="att-cal-nav">
+                  <button
+                    type="button"
+                    onClick={handlePrevCalMonth}
+                    className="btn btn-secondary btn-sm"
+                    title="Previous Month"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+                  <div className="att-cal-month-label">
+                    <CalendarDays size={18} className="text-primary" />
+                    <span className="font-bold text-lg">
+                      {new Date(calYear, calMonth - 1, 1).toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleNextCalMonth}
+                    className="btn btn-secondary btn-sm"
+                    title="Next Month"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTodayCal}
+                    className="btn btn-ghost btn-sm"
+                  >
+                    Today
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Summary Metrics */}
+            {calData?.summary && (
+              <div className="att-cal-metrics-row">
+                <div className="card att-metric-card metric-present">
+                  <span className="att-metric-label">Present</span>
+                  <span className="att-metric-value">{calData.summary.presentCount}</span>
+                </div>
+                <div className="card att-metric-card metric-late">
+                  <span className="att-metric-label">Late Arrival</span>
+                  <span className="att-metric-value">{calData.summary.lateCount}</span>
+                </div>
+                <div className="card att-metric-card metric-absent">
+                  <span className="att-metric-label">Unexcused Absent</span>
+                  <span className="att-metric-value">{calData.summary.absentCount}</span>
+                </div>
+                <div className="card att-metric-card metric-leave">
+                  <span className="att-metric-label">Approved Leave</span>
+                  <span className="att-metric-value">{calData.summary.leaveCount} d</span>
+                </div>
+                <div className="card att-metric-card metric-holiday">
+                  <span className="att-metric-label">Public Holidays</span>
+                  <span className="att-metric-value">{calData.summary.holidayCount}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Calendar Grid */}
+            <div className="card att-cal-grid-card">
+              <div className="att-cal-weekdays">
+                <span>Sun</span>
+                <span>Mon</span>
+                <span>Tue</span>
+                <span>Wed</span>
+                <span>Thu</span>
+                <span>Fri</span>
+                <span>Sat</span>
+              </div>
+
+              {calLoading ? (
+                <div className="att-cal-loading">Loading attendance calendar...</div>
+              ) : (
+                <div className="att-cal-days-grid">
+                  {/* Empty cells for offset */}
+                  {Array.from({ length: new Date(calYear, calMonth - 1, 1).getDay() }).map((_, idx) => (
+                    <div key={`offset-${idx}`} className="att-cal-day-cell empty"></div>
+                  ))}
+
+                  {/* Day cells */}
+                  {calData?.days?.map((d) => {
+                    const statusClass = `cell-type-${d.type}`;
+                    return (
+                      <div
+                        key={d.date}
+                        className={`att-cal-day-cell ${statusClass}`}
+                        title={`${d.date}: ${d.title}`}
+                      >
+                        <div className="att-cal-cell-header">
+                          <span className="att-cal-day-num">{d.day}</span>
+                          <span className={`att-cal-badge badge-${d.type}`}>{d.badge}</span>
+                        </div>
+                        <div className="att-cal-cell-body">
+                          {d.attendance?.check_in && (
+                            <div className="att-cal-time-row font-mono">
+                              {formatTimeStr(d.attendance.check_in)}
+                              {d.attendance.check_out && ` - ${formatTimeStr(d.attendance.check_out)}`}
+                            </div>
+                          )}
+                          {d.attendance?.total_hours > 0 && (
+                            <div className="att-cal-hours-row font-mono">
+                              {d.attendance.total_hours} hrs
+                            </div>
+                          )}
+                          {d.holiday && (
+                            <div className="att-cal-holiday-name" title={d.holiday.name}>
+                              {d.holiday.name}
+                            </div>
+                          )}
+                          {d.leave && (
+                            <div className="att-cal-leave-type">
+                              {d.leave.leave_type} {d.leave.is_half_day ? '(½ d)' : ''}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

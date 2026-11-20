@@ -355,13 +355,17 @@ router.put('/settings', requirePermission('payroll.manage'), async (req, res) =>
 router.get('/holidays', requirePermission('payroll.view'), async (req, res) => {
   try {
     const { year } = req.query;
-    let query = 'SELECT * FROM holidays';
+    let query = `
+      SELECT h.*, d.name AS department_name 
+      FROM holidays h
+      LEFT JOIN departments d ON h.department_id = d.id
+    `;
     const params = [];
     if (year) {
-      query += ' WHERE YEAR(date) = ?';
-      params.push(year);
+      query += ' WHERE YEAR(h.date) = ? OR (h.end_date IS NOT NULL AND YEAR(h.end_date) = ?)';
+      params.push(year, year);
     }
-    query += ' ORDER BY date ASC';
+    query += ' ORDER BY h.date ASC';
     const [rows] = await pool.query(query, params);
     res.json(rows);
   } catch (error) {
@@ -598,6 +602,22 @@ router.post('/runs/generate', requirePermission('payroll.manage'), async (req, r
       adjustmentsByEmp.get(adj.employee_id).push(adj);
     }
 
+    // 9.5 Fetch approved overtime requests for this month
+    const [overtimeRows] = await conn.query(`
+      SELECT id, employee_id, work_date, minutes, day_type, multiplier, status
+      FROM overtime_requests
+      WHERE status = 'approved'
+        AND work_date BETWEEN ? AND ?
+    `, [monthStartDate, monthEndDate]);
+
+    const overtimeByEmp = new Map();
+    for (const ot of overtimeRows) {
+      if (!overtimeByEmp.has(ot.employee_id)) {
+        overtimeByEmp.set(ot.employee_id, []);
+      }
+      overtimeByEmp.get(ot.employee_id).push(ot);
+    }
+
     // 10. Compute payslips for each active employee
     let totalGross = 0;
     let totalDeductions = 0;
@@ -610,6 +630,7 @@ router.post('/runs/generate', requirePermission('payroll.manage'), async (req, r
       const sal = salaryMap.get(emp.id) || null;
       const empAttendance = attendanceByEmp.get(emp.id) || [];
       const empLeaves = leavesByEmp.get(emp.id) || [];
+      const empOvertime = overtimeByEmp.get(emp.id) || [];
       const empAdjustments = adjustmentsByEmp.get(emp.id) || [];
       const prevPs = prevPayslipMap.get(emp.id) || null;
 
@@ -620,6 +641,7 @@ router.post('/runs/generate', requirePermission('payroll.manage'), async (req, r
         workingDaysData,
         attendanceRecords: empAttendance,
         leaveRequests: empLeaves,
+        overtimeRequests: empOvertime,
         pendingAdjustments: empAdjustments,
         prevMonthPayslip: prevPs,
         settings

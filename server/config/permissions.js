@@ -42,6 +42,11 @@ const PERMISSIONS = {
   LOCATION_VIEW: 'location.view',
   LOCATION_MANAGE: 'location.manage',
   LOCATION_EXEMPT: 'location.exempt',
+
+  // Holidays & Working Week
+  HOLIDAY_VIEW: 'holiday.view',
+  HOLIDAY_MANAGE: 'holiday.manage',
+  WORKING_WEEK_MANAGE: 'working_week.manage',
 };
 
 const ROLE_PERMISSIONS = {
@@ -71,6 +76,9 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.LOCATION_VIEW,
     PERMISSIONS.LOCATION_MANAGE,
     PERMISSIONS.LOCATION_EXEMPT,
+    PERMISSIONS.HOLIDAY_VIEW,
+    PERMISSIONS.HOLIDAY_MANAGE,
+    PERMISSIONS.WORKING_WEEK_MANAGE,
   ],
 
   department_manager: [
@@ -86,6 +94,7 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.SHIFT_VIEW,      // Scoped to own department
     PERMISSIONS.SHIFT_ASSIGN,    // Scoped to own department
     PERMISSIONS.LOCATION_VIEW,   // Scoped to own department
+    PERMISSIONS.HOLIDAY_VIEW,    // View holidays & team calendar
   ],
 
   employee: [
@@ -94,6 +103,7 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.LEAVE_REQUEST,
     PERMISSIONS.SHIFT_VIEW,      // Scoped to own shift
     PERMISSIONS.LOCATION_VIEW,   // Scoped to own check-in locations
+    PERMISSIONS.HOLIDAY_VIEW,    // View holidays & personal calendar
   ],
 };
 

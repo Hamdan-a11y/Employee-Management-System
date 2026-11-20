@@ -69,8 +69,14 @@ const Leaves = () => {
     leave_type: 'Annual',
     start_date: '',
     end_date: '',
+    is_half_day: false,
+    half_day_type: 'first_half',
     reason: '',
   });
+
+  // Working day preview calculation
+  const [previewData, setPreviewData] = useState(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   // ==========================================
   // 4. STATE: REJECT MODAL
@@ -136,7 +142,7 @@ const Leaves = () => {
     fetchRequests();
   }, [fetchRequests]);
 
-  // Compute live duration for the request modal
+  // Compute live duration & working-day preview for the request modal
   const computeDurationDays = () => {
     if (!requestForm.start_date || !requestForm.end_date) return 0;
     const s = new Date(requestForm.start_date);
@@ -146,7 +152,49 @@ const Leaves = () => {
     return Math.max(0, diff);
   };
 
-  const calculatedDays = computeDurationDays();
+  // Live preview effect fetching from server calendar logic
+  useEffect(() => {
+    if (!requestForm.start_date || !requestForm.end_date) {
+      setPreviewData(null);
+      return;
+    }
+    if (requestForm.start_date > requestForm.end_date) {
+      setPreviewData(null);
+      return;
+    }
+
+    let isMounted = true;
+    const timer = setTimeout(async () => {
+      try {
+        setPreviewLoading(true);
+        const res = await api.post('/leaves/calculate-preview', {
+          start_date: requestForm.start_date,
+          end_date: requestForm.end_date,
+          is_half_day: requestForm.is_half_day
+        });
+        if (isMounted) {
+          setPreviewData(res.data);
+        }
+      } catch (err) {
+        if (isMounted) {
+          setPreviewData(null);
+        }
+      } finally {
+        if (isMounted) {
+          setPreviewLoading(false);
+        }
+      }
+    }, 200);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(timer);
+    };
+  }, [requestForm.start_date, requestForm.end_date, requestForm.is_half_day]);
+
+  const calculatedDays = previewData?.effectiveDaysCount !== undefined
+    ? previewData.effectiveDaysCount
+    : (requestForm.is_half_day ? 0.5 : computeDurationDays());
 
   // Get available days for selected leave type
   const getSelectedTypeRemaining = () => {
@@ -164,8 +212,16 @@ const Leaves = () => {
   // Handle Request Submission
   const handleRequestSubmit = async (e) => {
     e.preventDefault();
-    if (calculatedDays <= 0) {
+    if (!requestForm.start_date || !requestForm.end_date) {
+      notifyError('Start date and end date are required.');
+      return;
+    }
+    if (requestForm.start_date > requestForm.end_date) {
       notifyError('Start date must be on or before end date.');
+      return;
+    }
+    if (calculatedDays <= 0) {
+      notifyError('The selected date range contains no working days (all dates are weekends or public holidays). No leave deduction is required.');
       return;
     }
 
@@ -176,15 +232,21 @@ const Leaves = () => {
 
     try {
       setSubmittingRequest(true);
-      const res = await api.post('/leaves/requests', requestForm);
+      const res = await api.post('/leaves/requests', {
+        ...requestForm,
+        days_count: calculatedDays
+      });
       success(res.data.message || 'Leave request submitted successfully!');
       setIsRequestModalOpen(false);
       setRequestForm({
         leave_type: 'Annual',
         start_date: '',
         end_date: '',
+        is_half_day: false,
+        half_day_type: 'first_half',
         reason: '',
       });
+      setPreviewData(null);
       fetchRequests();
       fetchBalances();
     } catch (err) {
@@ -534,9 +596,27 @@ const Leaves = () => {
                         {req.start_date} <span className="text-muted">to</span> {req.end_date}
                       </td>
                       <td className="leaves-td">
-                        <span className="duration-chip">
-                          {req.days_count} {req.days_count === 1 ? 'day' : 'days'}
-                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="duration-chip">
+                            {req.days_count} {req.days_count === 1 || req.days_count === 0.5 ? 'day' : 'days'}
+                          </span>
+                          {req.is_half_day ? (
+                            <span
+                              style={{
+                                display: 'inline-block',
+                                fontSize: '0.6875rem',
+                                padding: '2px 6px',
+                                background: '#ede9fe',
+                                color: '#6d28d9',
+                                borderRadius: '4px',
+                                fontWeight: 600
+                              }}
+                              title={req.half_day_type === 'second_half' ? 'Second Half (Afternoon)' : 'First Half (Morning)'}
+                            >
+                              ½ {req.half_day_type === 'second_half' ? '2nd' : '1st'}
+                            </span>
+                          ) : null}
+                        </div>
                       </td>
                       <td className="leaves-td max-w-sm">
                         <span className="leaves-reason-text" title={req.reason}>
@@ -724,14 +804,83 @@ const Leaves = () => {
                   </div>
                 </div>
 
-                {/* Dynamic Calculated Duration Chip */}
-                {calculatedDays > 0 && (
+                {/* Half-Day Leave Option (When Single Day Selected) */}
+                {requestForm.start_date && requestForm.start_date === requestForm.end_date && (
+                  <div className="form-group" style={{ background: '#f8fafc', padding: '10px 14px', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', margin: 0 }}>
+                      <input
+                        type="checkbox"
+                        checked={requestForm.is_half_day}
+                        onChange={(e) => setRequestForm((prev) => ({ ...prev, is_half_day: e.target.checked }))}
+                      />
+                      <span className="font-semibold text-sm text-primary">Request as Half-Day Leave (0.5 working days)</span>
+                    </label>
+                    {requestForm.is_half_day && (
+                      <div style={{ display: 'flex', gap: '20px', marginTop: '10px', marginLeft: '24px' }}>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', cursor: 'pointer' }}>
+                          <input
+                            type="radio"
+                            name="half_day_type"
+                            value="first_half"
+                            checked={requestForm.half_day_type === 'first_half'}
+                            onChange={() => setRequestForm((prev) => ({ ...prev, half_day_type: 'first_half' }))}
+                          />
+                          <span>First Half (Morning)</span>
+                        </label>
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.8125rem', cursor: 'pointer' }}>
+                          <input
+                            type="radio"
+                            name="half_day_type"
+                            value="second_half"
+                            checked={requestForm.half_day_type === 'second_half'}
+                            onChange={() => setRequestForm((prev) => ({ ...prev, half_day_type: 'second_half' }))}
+                          />
+                          <span>Second Half (Afternoon)</span>
+                        </label>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Dynamic Calculated Duration Chip & Warnings */}
+                {previewLoading ? (
+                  <div className="duration-banner" style={{ background: '#f8fafc', color: '#64748b' }}>
+                    <Clock size={16} />
+                    <span>Calculating working days (skipping weekends & public holidays)...</span>
+                  </div>
+                ) : calculatedDays > 0 ? (
                   <div className={`duration-banner ${isInsufficient ? 'duration-danger' : 'duration-success'}`}>
                     <Calendar size={16} />
-                    <span>
-                      Total Duration: <strong>{calculatedDays} {calculatedDays === 1 ? 'day' : 'days'}</strong>
-                      {isInsufficient && ' (Exceeds available balance!)'}
-                    </span>
+                    <div>
+                      <div>
+                        Total Working Days: <strong>{calculatedDays} {calculatedDays === 1 || calculatedDays === 0.5 ? 'day' : 'days'}</strong>
+                        {isInsufficient && ' (Exceeds available balance!)'}
+                      </div>
+                      {previewData && (previewData.weekendsSkipped > 0 || previewData.holidaysSkipped > 0) && (
+                        <div style={{ fontSize: '0.75rem', opacity: 0.9, marginTop: '2px' }}>
+                          Excluded: {previewData.weekendsSkipped > 0 ? `${previewData.weekendsSkipped} weekend day(s)` : ''}
+                          {previewData.weekendsSkipped > 0 && previewData.holidaysSkipped > 0 ? ', ' : ''}
+                          {previewData.holidaysSkipped > 0 ? `${previewData.holidaysSkipped} public holiday(s)` : ''}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : requestForm.start_date && requestForm.end_date && requestForm.start_date <= requestForm.end_date ? (
+                  <div className="duration-banner duration-danger">
+                    <AlertCircle size={16} />
+                    <span>The selected range contains 0 working days (dates are entirely weekends or holidays). No leave needed.</span>
+                  </div>
+                ) : null}
+
+                {/* Warnings List */}
+                {previewData?.warnings?.length > 0 && (
+                  <div style={{ background: '#fffbeb', border: '1px solid #fef3c7', borderRadius: '8px', padding: '10px 14px', fontSize: '0.8125rem', color: '#b45309', display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    {previewData.warnings.map((w, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <AlertCircle size={14} className="flex-shrink-0" />
+                        <span>{w}</span>
+                      </div>
+                    ))}
                   </div>
                 )}
 

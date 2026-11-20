@@ -1,0 +1,346 @@
+/* Team Calendar Matrix Grid Styles */
+/* Matching application design system */
+
+.team-cal-main {
+  flex: 1;
+  padding: var(--space-6, 24px);
+  max-width: 1600px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+@media (max-width: 768px) {
+  .team-cal-main {
+    padding: var(--space-4, 16px);
+  }
+}
+
+.team-cal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: var(--space-6, 24px);
+  flex-wrap: wrap;
+  gap: var(--space-4, 16px);
+}
+
+.team-cal-title {
+  font-size: 1.625rem;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+  letter-spacing: -0.025em;
+  margin: 0 0 6px 0;
+}
+
+.team-cal-subtitle {
+  color: var(--text-secondary, #64748b);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+  margin: 0;
+  max-width: 760px;
+}
+
+.team-cal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Toolbar Card */
+.team-cal-toolbar-card {
+  padding: 14px 18px;
+  margin-bottom: var(--space-4, 16px);
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+}
+
+.team-cal-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.team-cal-month-nav {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.team-cal-current-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: var(--bg-subtle, #f8fafc);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+}
+
+.team-cal-month-text {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+}
+
+.team-cal-filter-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.team-cal-select {
+  height: 38px;
+  border-radius: var(--radius-md, 8px);
+  padding: 0 12px;
+  border: 1px solid var(--border-color, #e2e8f0);
+  background: var(--bg-surface, #ffffff);
+  font-size: 0.875rem;
+  color: var(--text-primary, #0f172a);
+}
+
+.team-cal-search-box {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  padding: 0 12px;
+  height: 38px;
+  min-width: 240px;
+}
+
+.team-cal-search-input {
+  border: none;
+  outline: none;
+  font-size: 0.875rem;
+  background: transparent;
+  width: 100%;
+}
+
+/* Legend Bar */
+.team-cal-legend-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 10px 16px;
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  margin-bottom: var(--space-4, 16px);
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-secondary, #64748b);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+}
+
+/* Matrix Table Card */
+.team-cal-matrix-card {
+  padding: 0;
+  border-radius: var(--radius-lg, 12px);
+  background: var(--bg-surface, #ffffff);
+  border: 1px solid var(--border-color, #e2e8f0);
+  overflow: hidden;
+}
+
+.team-cal-table-wrapper {
+  overflow-x: auto;
+  max-width: 100%;
+}
+
+.team-cal-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+
+.th-employee-fixed,
+.td-employee-fixed {
+  position: sticky;
+  left: 0;
+  background: var(--bg-surface, #ffffff);
+  z-index: 10;
+  min-width: 200px;
+  max-width: 240px;
+  box-shadow: 2px 0 5px rgba(0, 0, 0, 0.04);
+  padding: 10px 14px;
+  text-align: left;
+}
+
+.th-employee-fixed {
+  background: var(--bg-subtle, #f8fafc);
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary, #64748b);
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+}
+
+.td-employee-fixed {
+  border-bottom: 1px solid var(--border-color, #f1f5f9);
+}
+
+.emp-info-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.emp-name {
+  font-weight: 600;
+  color: var(--text-primary, #0f172a);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.emp-sub {
+  font-size: 0.6875rem;
+  color: var(--text-secondary, #64748b);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Table Header Days */
+.th-day {
+  min-width: 38px;
+  max-width: 44px;
+  padding: 6px 4px;
+  text-align: center;
+  background: var(--bg-subtle, #f8fafc);
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  border-left: 1px solid var(--border-color, #f1f5f9);
+}
+
+.th-day-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.th-day-num {
+  font-size: 0.8125rem;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+}
+
+.th-day-name {
+  font-size: 0.625rem;
+  font-weight: 600;
+  color: var(--text-muted, #94a3b8);
+  text-transform: uppercase;
+}
+
+.th-day.th-weekend {
+  background: #f1f5f9;
+}
+.th-day.th-weekend .th-day-num,
+.th-day.th-weekend .th-day-name {
+  color: #94a3b8;
+}
+
+.th-day.th-holiday {
+  background: #ede9fe;
+}
+.th-day.th-holiday .th-day-num {
+  color: #6d28d9;
+}
+
+/* Day Cells */
+.td-day-cell {
+  padding: 6px 4px;
+  text-align: center;
+  border-bottom: 1px solid var(--border-color, #f1f5f9);
+  border-left: 1px solid var(--border-color, #f1f5f9);
+  cursor: default;
+  transition: opacity 0.1s ease;
+}
+
+.td-day-cell:hover {
+  opacity: 0.85;
+}
+
+.cell-code {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Status Cell Colors */
+.cell-present {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.cell-late {
+  background: #ffedd5;
+  color: #c2410c;
+}
+
+.cell-absent {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.cell-leave {
+  background: #fef3c7;
+  color: #b45309;
+}
+
+.cell-half-leave {
+  background: #fde68a;
+  color: #92400e;
+}
+
+.cell-holiday {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.cell-holiday-work {
+  background: #fae8ff;
+  color: #a21caf;
+  border: 1px dashed #c084fc;
+}
+
+.cell-weekend-work {
+  background: #e0f2fe;
+  color: #0284c7;
+  border: 1px dashed #38bdf8;
+}
+
+.cell-weekend {
+  background: #f8fafc;
+  color: #cbd5e1;
+}
+
+.cell-working-pending {
+  background: #ffffff;
+  color: #cbd5e1;
+}
+
+.team-cal-loading,
+.team-cal-empty {
+  padding: 48px;
+  text-align: center;
+  color: var(--text-muted, #94a3b8);
+  font-style: italic;
+}

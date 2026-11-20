@@ -23,6 +23,10 @@ import Payroll from './pages/Payroll';
 import MyPayslips from './pages/MyPayslips';
 import Shifts from './pages/Shifts';
 import OfficeLocations from './pages/OfficeLocations';
+import Holidays from './pages/Holidays';
+import WorkingWeek from './pages/WorkingWeek';
+import TeamCalendar from './pages/TeamCalendar';
+import Overtime from './pages/Overtime';
 
 function App() {
   return (
@@ -167,10 +171,74 @@ function App() {
             }
           />
           <Route
+            path="/holidays"
+            element={
+              <ProtectedRoute>
+                <Holidays />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/working-week"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager']}>
+                <WorkingWeek />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/team-calendar"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
+                <TeamCalendar />
+              </ProtectedRoute>
+            }
+          />
+          <Route
             path="/payroll"
             element={
               <ProtectedRoute allowedRoles={['admin', 'hr_manager']}>
                 <Payroll />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/overtime"
+            element={
+              <ProtectedRoute>
+                <Overtime />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/overtime/approvals"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
+                <Overtime />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/overtime/my"
+            element={
+              <ProtectedRoute>
+                <Overtime />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/overtime/policies"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager']}>
+                <Overtime />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/overtime/report"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
+                <Overtime />
               </ProtectedRoute>
             }
           />

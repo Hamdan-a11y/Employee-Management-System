@@ -5,6 +5,7 @@ const { authenticateToken, requireAdmin } = require('../middleware/auth');
 const { requirePermission, verifyDepartmentAccess } = require('../middleware/rbac');
 const { logAudit } = require('../services/auditLogger');
 const { notifyEmployeeUser, notifyAdmins } = require('../services/notificationService');
+const { getWorkingDays, formatDate } = require('../services/calendarService');
 
 // All leave endpoints require authentication
 router.use(authenticateToken);
@@ -323,11 +324,55 @@ router.get('/requests', async (req, res) => {
 });
 
 // =========================================================================
+// 2.5 POST /api/leaves/calculate-preview — Live working-day count & warnings
+// =========================================================================
+router.post('/calculate-preview', async (req, res) => {
+  try {
+    const { start_date, end_date, is_half_day, employee_id: overrideEmpId } = req.body;
+    if (!start_date || !end_date) {
+      return res.status(400).json({ message: 'Start date and end date are required.' });
+    }
+
+    const employeeId = await resolveEmployeeId(req.user, overrideEmpId);
+    const formattedStart = formatLocalDate(start_date);
+    const formattedEnd = formatLocalDate(end_date);
+
+    const workingDaysData = await getWorkingDays(employeeId, formattedStart, formattedEnd);
+    let effectiveDaysCount = workingDaysData.workingDaysCount;
+
+    if (Boolean(is_half_day) && formattedStart === formattedEnd) {
+      effectiveDaysCount = 0.5;
+    }
+
+    // Check balance for employee
+    const startYear = new Date(start_date).getFullYear();
+    const balance = employeeId ? await getOrInitLeaveBalance(pool, employeeId, startYear) : null;
+
+    res.json({
+      ...workingDaysData,
+      effectiveDaysCount,
+      isHalfDay: Boolean(is_half_day),
+      balance
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to calculate leave preview.', error: err.message });
+  }
+});
+
+// =========================================================================
 // 3. POST /api/leaves/requests — Submit a new leave request
 // =========================================================================
 router.post('/requests', async (req, res) => {
   try {
-    const { leave_type, start_date, end_date, reason, employee_id: overrideEmpId } = req.body;
+    const {
+      leave_type,
+      start_date,
+      end_date,
+      reason,
+      is_half_day = false,
+      half_day_type = null,
+      employee_id: overrideEmpId
+    } = req.body;
 
     const employeeId = await resolveEmployeeId(req.user, overrideEmpId);
     if (!employeeId) {
@@ -356,10 +401,22 @@ router.post('/requests', async (req, res) => {
 
     const formattedStart = formatLocalDate(start);
     const formattedEnd = formatLocalDate(end);
-    const daysCount = calculateDays(formattedStart, formattedEnd);
+
+    // Calculate working days only (skipping weekends & holidays)
+    const workingDaysData = await getWorkingDays(employeeId, formattedStart, formattedEnd);
+    let daysCount = workingDaysData.workingDaysCount;
+
+    const isHalfDay = Boolean(is_half_day) && formattedStart === formattedEnd;
+    if (isHalfDay) {
+      daysCount = 0.5;
+    }
 
     if (daysCount <= 0) {
-      return res.status(400).json({ message: 'Leave request must span at least 1 day.' });
+      return res.status(400).json({
+        message: 'The selected date range contains only weekends and public holidays (0 working days). No leave deduction is required.',
+        holidays: workingDaysData.holidaysList,
+        warnings: workingDaysData.warnings
+      });
     }
 
     // 2. Overlap Prevention: Check for overlapping active requests (PENDING or APPROVED)
@@ -393,13 +450,13 @@ router.post('/requests', async (req, res) => {
 
     const prefix = typePrefixMap[leave_type];
     if (prefix) {
-      const total = balance[`${prefix}_total`] || 0;
-      const used = balance[`${prefix}_used`] || 0;
-      const available = Math.max(0, total - used);
+      const total = parseFloat(balance[`${prefix}_total`]) || 0;
+      const used = parseFloat(balance[`${prefix}_used`]) || 0;
+      const available = Math.max(0, parseFloat((total - used).toFixed(1)));
 
       if (used + daysCount > total) {
         return res.status(400).json({
-          message: `Insufficient leave balance for ${leave_type} leave. Requested: ${daysCount} day(s), Available: ${available} day(s).`,
+          message: `Insufficient leave balance for ${leave_type} leave. Requested: ${daysCount} working day(s), Available: ${available} day(s).`,
         });
       }
     }
@@ -407,9 +464,18 @@ router.post('/requests', async (req, res) => {
     // 4. Insert Leave Request
     const [result] = await pool.query(`
       INSERT INTO leave_requests (
-        employee_id, leave_type, start_date, end_date, days_count, reason, status
-      ) VALUES (?, ?, ?, ?, ?, ?, 'PENDING')
-    `, [employeeId, leave_type, formattedStart, formattedEnd, daysCount, reason.trim()]);
+        employee_id, leave_type, start_date, end_date, days_count, is_half_day, half_day_type, reason, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')
+    `, [
+      employeeId,
+      leave_type,
+      formattedStart,
+      formattedEnd,
+      daysCount,
+      isHalfDay ? 1 : 0,
+      isHalfDay ? (half_day_type || 'first_half') : null,
+      reason.trim()
+    ]);
 
     const newRequestId = result.insertId;
 
@@ -433,13 +499,14 @@ router.post('/requests', async (req, res) => {
       entityType: 'LEAVE_REQUEST',
       entityId: newRequestId,
       employeeName,
-      details: `Submitted ${daysCount} day(s) ${leave_type} leave request from ${formattedStart} to ${formattedEnd}`,
+      details: `Submitted ${daysCount} working day(s) ${leave_type} leave request from ${formattedStart} to ${formattedEnd}${isHalfDay ? ` (Half-Day: ${half_day_type})` : ''}`,
     });
 
     return res.status(201).json({
       message: 'Leave request submitted successfully and is awaiting review.',
       requestId: newRequestId,
       days_count: daysCount,
+      warnings: workingDaysData.warnings
     });
   } catch (err) {
     console.error('[Leaves API] Error submitting leave request:', err);
@@ -503,19 +570,20 @@ router.patch('/requests/:id/approve', requirePermission('leave.manage'), async (
 
     const prefix = typePrefixMap[leaveReq.leave_type];
     if (prefix) {
-      const total = balance[`${prefix}_total`] || 0;
-      const used = balance[`${prefix}_used`] || 0;
+      const total = parseFloat(balance[`${prefix}_total`]) || 0;
+      const used = parseFloat(balance[`${prefix}_used`]) || 0;
+      const daysCount = parseFloat(leaveReq.days_count);
 
-      if (used + leaveReq.days_count > total) {
+      if (used + daysCount > total) {
         await conn.rollback();
         return res.status(400).json({
-          message: `Cannot approve: Employee has insufficient ${leaveReq.leave_type} balance. Available: ${Math.max(0, total - used)} days, Required: ${leaveReq.days_count} days.`,
+          message: `Cannot approve: Employee has insufficient ${leaveReq.leave_type} balance. Available: ${Math.max(0, parseFloat((total - used).toFixed(1)))} days, Required: ${daysCount} days.`,
         });
       }
 
       await conn.query(
         `UPDATE leave_balances SET ${prefix}_used = ${prefix}_used + ? WHERE id = ?`,
-        [leaveReq.days_count, balance.id]
+        [daysCount, balance.id]
       );
     }
 

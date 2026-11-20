@@ -23,6 +23,10 @@ const workforceRoutes = require('./routes/workforce');
 const payrollRoutes = require('./routes/payroll');
 const shiftRoutes = require('./routes/shifts');
 const officeRoutes = require('./routes/offices');
+const holidayRoutes = require('./routes/holidays');
+const workingWeekRoutes = require('./routes/workingWeek');
+const calendarRoutes = require('./routes/calendar');
+const overtimeRoutes = require('./routes/overtime');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./docs/swaggerSpec');
 
@@ -135,6 +139,10 @@ app.use('/api/workforce', workforceRoutes);
 app.use('/api/payroll', payrollRoutes);
 app.use('/api/shifts', shiftRoutes);
 app.use('/api/offices', officeRoutes);
+app.use('/api/holidays', holidayRoutes);
+app.use('/api/working-week', workingWeekRoutes);
+app.use('/api/calendar', calendarRoutes);
+app.use('/api/overtime', overtimeRoutes);
 
 // Health check route
 app.get('/api/health', async (req, res) => {

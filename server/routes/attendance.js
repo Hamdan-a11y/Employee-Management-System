@@ -21,6 +21,8 @@ const {
   calculateWorkingHoursAndShortDay,
   formatDate
 } = require('../services/shiftService');
+const { getAbsentDays } = require('../services/calendarService');
+const { calculateOvertime, recalculateOvertimeOnCorrection } = require('../services/overtimeService');
 
 // Protect all attendance routes with token authentication
 router.use(authenticateToken);
@@ -614,6 +616,16 @@ router.post('/check-out', attendanceLimiter, async (req, res) => {
     const [updatedRows] = await pool.query('SELECT * FROM attendance WHERE id = ?', [record.id]);
     const updatedRecord = updatedRows[0];
 
+    // 6. Calculate Overtime & Create Request (auto-approved if approval_required = false)
+    let overtimeResult = null;
+    try {
+      overtimeResult = await calculateOvertime(employeeId, record.date, {
+        attendance: updatedRecord
+      });
+    } catch (otErr) {
+      console.error('[Attendance Check-Out] Overtime calculation error:', otErr);
+    }
+
     if (suspiciousCheck.isSuspicious) {
       logAudit({
         req,
@@ -629,6 +641,7 @@ router.post('/check-out', attendanceLimiter, async (req, res) => {
       message: `Check-out recorded successfully. Total working time: ${totalHours} hours.${isShortDay ? ' (Flagged as Short Day)' : ''}`,
       attendance: updatedRecord,
       shift,
+      overtime: overtimeResult || null,
       location: {
         status: checkOutLocationStatus,
         distance: checkOutDistance,
@@ -894,16 +907,43 @@ router.get('/report/monthly', async (req, res) => {
 
     const [rows] = await pool.query(baseQuery, params);
 
+    const monthStr = `${year}-${String(month).padStart(2, '0')}`;
+    const enrichedRows = await Promise.all(
+      rows.map(async (r) => {
+        try {
+          const absData = await getAbsentDays(r.employee_id, monthStr);
+          return {
+            ...r,
+            days_scheduled_working: absData.scheduledWorkingDays,
+            days_absent: absData.absentDaysCount,
+            days_on_leave: absData.onLeaveDates.length,
+            days_holiday_work: absData.holidayWorkDates.length,
+            days_weekend_work: absData.weekendWorkDates.length
+          };
+        } catch (e) {
+          return {
+            ...r,
+            days_scheduled_working: Number(r.days_recorded || 0),
+            days_absent: 0,
+            days_on_leave: 0,
+            days_holiday_work: 0,
+            days_weekend_work: 0
+          };
+        }
+      })
+    );
+
     // Calculate company-wide / team-wide metrics summary
-    const summary = rows.reduce(
+    const summary = enrichedRows.reduce(
       (acc, r) => {
         acc.totalEmployees += 1;
         acc.totalPresentDays += Number(r.days_present || 0);
         acc.totalLateDays += Number(r.days_late || 0);
+        acc.totalAbsentDays += Number(r.days_absent || 0);
         acc.totalHours += Number(r.total_hours_worked || 0);
         return acc;
       },
-      { totalEmployees: 0, totalPresentDays: 0, totalLateDays: 0, totalHours: 0 }
+      { totalEmployees: 0, totalPresentDays: 0, totalLateDays: 0, totalAbsentDays: 0, totalHours: 0 }
     );
     summary.totalHours = parseFloat(summary.totalHours.toFixed(2));
 
@@ -911,7 +951,7 @@ router.get('/report/monthly', async (req, res) => {
       year,
       month,
       summary,
-      report: rows
+      report: enrichedRows
     });
   } catch (error) {
     res.status(500).json({ message: 'Failed to generate monthly attendance report.', error: error.message });
@@ -1353,6 +1393,13 @@ router.patch('/corrections/:id/approve', requirePermission('attendance.manage'),
        WHERE id = ?`,
       [req.user.id, id]
     );
+
+    // If correction changes check-out, recalculate overtime (approved overtime goes back to pending; closed months can't change)
+    try {
+      await recalculateOvertimeOnCorrection(correction.employee_id, targetDate);
+    } catch (otErr) {
+      console.warn('[Attendance Correction] Overtime recalculation notice:', otErr.message);
+    }
 
     // If month is locked, create automatic adjustment line in payroll_adjustments
     const corrMonth = targetDate.slice(0, 7);
