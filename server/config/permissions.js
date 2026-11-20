@@ -32,6 +32,11 @@ const PERMISSIONS = {
   PAYROLL_APPROVE: 'payroll.approve',
   SALARY_VIEW: 'salary.view',
   SALARY_MANAGE: 'salary.manage',
+
+  // Shift Management
+  SHIFT_VIEW: 'shift.view',
+  SHIFT_MANAGE: 'shift.manage',
+  SHIFT_ASSIGN: 'shift.assign',
 };
 
 const ROLE_PERMISSIONS = {
@@ -55,6 +60,9 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.PAYROLL_APPROVE,
     PERMISSIONS.SALARY_VIEW,
     PERMISSIONS.SALARY_MANAGE,
+    PERMISSIONS.SHIFT_VIEW,
+    PERMISSIONS.SHIFT_MANAGE,
+    PERMISSIONS.SHIFT_ASSIGN,
   ],
 
   department_manager: [
@@ -67,12 +75,15 @@ const ROLE_PERMISSIONS = {
     PERMISSIONS.LEAVE_VIEW,      // Scoped to own department
     PERMISSIONS.LEAVE_REQUEST,
     PERMISSIONS.LEAVE_MANAGE,    // Scoped to own department
+    PERMISSIONS.SHIFT_VIEW,      // Scoped to own department
+    PERMISSIONS.SHIFT_ASSIGN,    // Scoped to own department
   ],
 
   employee: [
     PERMISSIONS.DEPARTMENT_VIEW,
     PERMISSIONS.ATTENDANCE_PUNCH,
     PERMISSIONS.LEAVE_REQUEST,
+    PERMISSIONS.SHIFT_VIEW,      // Scoped to own shift
   ],
 };
 

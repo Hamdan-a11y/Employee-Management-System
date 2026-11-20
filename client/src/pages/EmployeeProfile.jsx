@@ -25,7 +25,13 @@ import {
   ShieldCheck,
   ExternalLink,
   RotateCcw,
-  Archive
+  Archive,
+  Sun,
+  Sunset,
+  Moon,
+  Sliders,
+  CalendarDays,
+  CheckCircle2
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
@@ -82,6 +88,14 @@ export default function EmployeeProfile() {
   const [deleteDocTarget, setDeleteDocTarget] = useState(null);
   const [deleteDocLoading, setDeleteDocLoading] = useState(false);
 
+  // Shift management state
+  const [shiftData, setShiftData] = useState({ current_shift: null, history: [] });
+  const [loadingShifts, setLoadingShifts] = useState(false);
+  const [closeModalOpen, setCloseModalOpen] = useState(false);
+  const [closeTargetAssignment, setCloseTargetAssignment] = useState(null);
+  const [closeEndDate, setCloseEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [closingAssignment, setClosingAssignment] = useState(false);
+
   // Fetch employee details
   const fetchEmployee = async () => {
     try {
@@ -123,10 +137,44 @@ export default function EmployeeProfile() {
     }
   };
 
+  // Fetch shift details and assignment history
+  const fetchShiftHistory = async () => {
+    try {
+      setLoadingShifts(true);
+      const res = await api.get(`/shifts/assignments/employee/${effectiveId}`);
+      setShiftData(res.data);
+    } catch (err) {
+      console.error('Failed to load employee shifts', err);
+    } finally {
+      setLoadingShifts(false);
+    }
+  };
+
+  // Close shift assignment handler
+  const handleConfirmCloseAssignment = async (e) => {
+    e.preventDefault();
+    if (!closeTargetAssignment) return;
+    try {
+      setClosingAssignment(true);
+      const res = await api.patch(`/shifts/assignments/${closeTargetAssignment.id}/close`, {
+        end_date: closeEndDate
+      });
+      notifySuccess(res.data.message || 'Assignment closed successfully.');
+      setCloseModalOpen(false);
+      setCloseTargetAssignment(null);
+      fetchShiftHistory();
+    } catch (err) {
+      notifyError(err.response?.data?.message || 'Failed to close assignment.');
+    } finally {
+      setClosingAssignment(false);
+    }
+  };
+
   useEffect(() => {
     if (effectiveId) {
       fetchEmployee();
       fetchDocuments();
+      fetchShiftHistory();
     }
   }, [effectiveId]);
 
@@ -799,6 +847,194 @@ export default function EmployeeProfile() {
               </div>
             </div>
           </div>
+
+          {/* Card: Current Shift Schedule (Requirement 6) */}
+          <div className="profile-card" style={{ marginTop: '20px' }}>
+            <div className="profile-card-header">
+              <div className="profile-card-title-group">
+                <Clock size={18} className="profile-card-icon" />
+                <h2 className="profile-card-title">Assigned Work Shift</h2>
+              </div>
+              {(isAdmin || isHR || isDeptManager) && (
+                <Link to="/shifts?tab=assign" className="btn btn-secondary btn-sm">
+                  <CalendarDays size={14} />
+                  <span>Assign Shift</span>
+                </Link>
+              )}
+            </div>
+
+            <div className="profile-card-body">
+              {loadingShifts ? (
+                <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                  Loading shift schedule...
+                </div>
+              ) : shiftData.current_shift ? (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '14px' }}>
+                    <div>
+                      <h3 style={{ fontSize: '1.0625rem', fontWeight: 700, margin: '0 0 4px 0', color: 'var(--text-primary)' }}>
+                        {shiftData.current_shift.name}
+                      </h3>
+                      <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexWrap: 'wrap' }}>
+                        <span className={`badge-shift-type badge-${shiftData.current_shift.type || 'morning'}`}>
+                          {shiftData.current_shift.type === 'morning' && <Sun size={12} />}
+                          {shiftData.current_shift.type === 'evening' && <Sunset size={12} />}
+                          {shiftData.current_shift.type === 'night' && <Moon size={12} />}
+                          {shiftData.current_shift.type === 'flexible' && <Sliders size={12} />}
+                          <span style={{ textTransform: 'capitalize' }}>{shiftData.current_shift.type} Shift</span>
+                        </span>
+
+                        {shiftData.current_shift.crosses_midnight && (
+                          <span className="badge-midnight" title="End time crosses midnight into next day">
+                            <Moon size={10} />
+                            <span>Crosses Midnight (+1d)</span>
+                          </span>
+                        )}
+
+                        {shiftData.current_shift.source === 'rotation' ? (
+                          <span className="badge-default" style={{ background: '#ecfdf5', color: '#047857', borderColor: '#a7f3d0' }}>
+                            {shiftData.current_shift.rotation_name || 'Rotation Cycle'} (Week {shiftData.current_shift.rotation_week || 1})
+                          </span>
+                        ) : shiftData.current_shift.source === 'default' ? (
+                          <span className="badge-default">Company Default Shift</span>
+                        ) : (
+                          <span className="badge-default" style={{ background: '#eff6ff', color: '#1d4ed8' }}>
+                            Direct Assignment
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="profile-details-list">
+                    <div className="profile-detail-row">
+                      <div className="profile-detail-label">
+                        <Clock size={15} />
+                        <span>Working Hours</span>
+                      </div>
+                      <div className="profile-detail-value font-numeric font-semibold">
+                        {shiftData.current_shift.type === 'flexible' ? (
+                          <span style={{ fontStyle: 'italic', color: 'var(--text-secondary)' }}>
+                            Flexible Hours (min {(shiftData.current_shift.min_working_minutes / 60).toFixed(1)} hrs)
+                          </span>
+                        ) : (
+                          `${shiftData.current_shift.start_time?.slice(0, 5)} – ${shiftData.current_shift.end_time?.slice(0, 5)}`
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="profile-detail-row">
+                      <div className="profile-detail-label">
+                        <CheckCircle2 size={15} />
+                        <span>Grace Arrival Period</span>
+                      </div>
+                      <div className="profile-detail-value font-numeric">
+                        {shiftData.current_shift.type === 'flexible' ? 'Not Applicable' : `${shiftData.current_shift.grace_minutes || 0} minutes`}
+                      </div>
+                    </div>
+
+                    <div className="profile-detail-row">
+                      <div className="profile-detail-label">
+                        <RotateCcw size={15} />
+                        <span>Scheduled Break</span>
+                      </div>
+                      <div className="profile-detail-value font-numeric">
+                        {shiftData.current_shift.break_minutes || 0} minutes (deducted on checkout)
+                      </div>
+                    </div>
+
+                    <div className="profile-detail-row">
+                      <div className="profile-detail-label">
+                        <ShieldCheck size={15} />
+                        <span>Minimum Required Hours</span>
+                      </div>
+                      <div className="profile-detail-value font-numeric">
+                        {((shiftData.current_shift.min_working_minutes || 480) / 60).toFixed(1)} hours (under this flags Short Day)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
+                  No active shift assigned. The employee operates under the company default shift.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Card: Shift Assignment History Timeline (Requirement 6) */}
+          <div className="profile-card" style={{ marginTop: '20px' }}>
+            <div className="profile-card-header">
+              <div className="profile-card-title-group">
+                <CalendarDays size={18} className="profile-card-icon" />
+                <h2 className="profile-card-title">Shift Assignment History</h2>
+                <span className="profile-count-pill">{shiftData.history?.length || 0}</span>
+              </div>
+            </div>
+
+            <div className="profile-card-body">
+              {shiftData.history?.length === 0 ? (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', margin: 0 }}>
+                  No prior shift assignments on record.
+                </p>
+              ) : (
+                <div className="shift-timeline">
+                  {shiftData.history?.map((item) => (
+                    <div key={item.id} className="shift-timeline-item">
+                      <div className={`shift-timeline-dot ${item.is_active_now ? 'active' : ''}`}>
+                        <Clock size={15} />
+                      </div>
+                      <div className="shift-timeline-content">
+                        <div className="shift-timeline-header">
+                          <span className="shift-timeline-title">
+                            {item.shift_name || item.rotation_name || 'Shift Assignment'}
+                          </span>
+                          {item.is_active_now && (
+                            <span className="badge-active-status active" style={{ fontSize: '0.6875rem' }}>
+                              Current Active
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="shift-timeline-dates">
+                          {item.start_date} {item.end_date ? `to ${item.end_date}` : '(Ongoing)'}
+                        </div>
+
+                        {item.assigned_by_name && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                            Assigned by: {item.assigned_by_name}
+                          </div>
+                        )}
+
+                        {item.notes && (
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', fontStyle: 'italic', marginTop: '2px' }}>
+                            "{item.notes}"
+                          </div>
+                        )}
+
+                        {item.is_active_now && (isAdmin || isHR || isDeptManager) && (
+                          <div style={{ marginTop: '8px' }}>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setCloseTargetAssignment(item);
+                                setCloseEndDate(new Date().toISOString().split('T')[0]);
+                                setCloseModalOpen(true);
+                              }}
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: '0.75rem', padding: '3px 8px' }}
+                            >
+                              Close Assignment
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Right Column: Documents Management */}
@@ -1037,6 +1273,70 @@ export default function EmployeeProfile() {
                 {deleteDocLoading ? 'Deleting...' : 'Delete Permanently'}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Close Shift Assignment (Requirement 2) */}
+      {closeModalOpen && closeTargetAssignment && (
+        <div className="modal-backdrop">
+          <div className="profile-modal-card profile-modal-sm">
+            <div className="profile-modal-header">
+              <div className="profile-modal-title-wrap">
+                <Clock size={18} />
+                <h3>Close Shift Assignment</h3>
+              </div>
+              <button
+                type="button"
+                className="profile-modal-close"
+                onClick={() => setCloseModalOpen(false)}
+                disabled={closingAssignment}
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmCloseAssignment}>
+              <div className="profile-modal-body">
+                <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                  Per policy, shift assignments are never deleted. Set an expiration end date to close{' '}
+                  <strong>"{closeTargetAssignment.shift_name || closeTargetAssignment.rotation_name}"</strong>.
+                </p>
+
+                <div className="profile-form-group">
+                  <label className="profile-label">Assignment End Date *</label>
+                  <input
+                    type="date"
+                    className="profile-input"
+                    value={closeEndDate}
+                    onChange={(e) => setCloseEndDate(e.target.value)}
+                    required
+                    disabled={closingAssignment}
+                  />
+                  <span className="profile-input-hint">
+                    Original start date: {closeTargetAssignment.start_date}
+                  </span>
+                </div>
+              </div>
+
+              <div className="profile-modal-footer">
+                <button
+                  type="button"
+                  onClick={() => setCloseModalOpen(false)}
+                  className="btn btn-secondary"
+                  disabled={closingAssignment}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={closingAssignment}
+                >
+                  {closingAssignment ? 'Closing...' : 'Close Assignment'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

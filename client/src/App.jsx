@@ -21,6 +21,7 @@ import Leaves from './pages/Leaves';
 import Headcount from './pages/Headcount';
 import Payroll from './pages/Payroll';
 import MyPayslips from './pages/MyPayslips';
+import Shifts from './pages/Shifts';
 
 function App() {
   return (
@@ -113,6 +114,30 @@ function App() {
             element={
               <ProtectedRoute>
                 <Attendance />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/shifts"
+            element={
+              <ProtectedRoute>
+                <Shifts />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/shifts/assign"
+            element={
+              <ProtectedRoute allowedRoles={['admin', 'hr_manager', 'department_manager']}>
+                <Shifts />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/shifts/schedule"
+            element={
+              <ProtectedRoute>
+                <Shifts />
               </ProtectedRoute>
             }
           />

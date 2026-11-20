@@ -7,43 +7,36 @@ const { requirePermission, verifyDepartmentAccess } = require('../middleware/rba
 const { logAudit } = require('../services/auditLogger');
 const { notifyEmployeeUser, notifyAdmins } = require('../services/notificationService');
 const { generateCSV } = require('../utils/csvHelper');
+const {
+  getEmployeeShift,
+  calculateLateStatus,
+  calculateWorkingHoursAndShortDay,
+  formatDate
+} = require('../services/shiftService');
 
 // Protect all attendance routes with token authentication
 router.use(authenticateToken);
 
 /**
- * Calculates whether a check-in is late based on standard 09:00 AM shift and 15-minute grace period (09:15 AM).
+ * Calculates whether a check-in is late based on shift timing and grace period.
+ * Uses shift if provided, otherwise standard fallback.
  */
-function calculateLateDetails(checkInDateObj) {
-  const checkIn = new Date(checkInDateObj);
-
-  // Shift start: 09:00:00 on the day of check-in
-  const shiftStart = new Date(checkIn);
-  shiftStart.setHours(9, 0, 0, 0);
-
-  // Grace cutoff: 09:15:00
-  const graceCutoff = new Date(checkIn);
-  graceCutoff.setHours(9, 15, 0, 0);
-
-  if (checkIn.getTime() > graceCutoff.getTime()) {
-    const diffMs = checkIn.getTime() - shiftStart.getTime();
-    const lateMinutes = Math.max(1, Math.round(diffMs / (60 * 1000)));
-    return { isLate: true, lateMinutes, status: 'Late' };
+function calculateLateDetails(checkInDateObj, shift = null) {
+  if (shift) {
+    return calculateLateStatus(checkInDateObj, shift);
   }
-
-  return { isLate: false, lateMinutes: 0, status: 'Present' };
+  return calculateLateStatus(checkInDateObj, {
+    start_time: '09:00:00',
+    grace_minutes: 15
+  });
 }
 
 /**
- * Calculates work hours between check-in and check-out.
+ * Calculates work hours between check-in and check-out, deducting shift break minutes.
  */
-function calculateWorkHours(checkInDateObj, checkOutDateObj) {
-  const checkIn = new Date(checkInDateObj);
-  const checkOut = new Date(checkOutDateObj);
-  const diffMs = checkOut.getTime() - checkIn.getTime();
-  if (diffMs <= 0) return 0;
-  const hours = diffMs / (1000 * 60 * 60);
-  return parseFloat(hours.toFixed(2));
+function calculateWorkHours(checkInDateObj, checkOutDateObj, shift = null) {
+  const { totalHours } = calculateWorkingHoursAndShortDay(checkInDateObj, checkOutDateObj, shift);
+  return totalHours;
 }
 
 /**
@@ -98,6 +91,7 @@ async function resolveEmployeeId(req) {
 /**
  * GET /api/attendance/today
  * Returns today's attendance record and punch status for the authenticated user.
+ * Supports overnight night shifts where check-in occurred before midnight and check-out is pending.
  */
 router.get('/today', async (req, res) => {
   try {
@@ -108,25 +102,46 @@ router.get('/today', async (req, res) => {
         record: null,
         hasCheckedIn: false,
         hasCheckedOut: false,
+        shift: null,
         message: 'No linked employee profile found.'
       });
     }
 
-    const [rows] = await pool.query(
+    // 1. Check for active open check-in first (handles overnight night shifts crossing midnight)
+    const [openRows] = await pool.query(
       `SELECT a.*, e.name AS employee_name
        FROM attendance a
        JOIN employees e ON a.employee_id = e.id
-       WHERE a.employee_id = ? AND a.date = CURDATE()`,
+       WHERE a.employee_id = ? AND a.check_out IS NULL
+       ORDER BY a.check_in DESC
+       LIMIT 1`,
       [employeeId]
     );
 
-    const record = rows[0] || null;
+    let record = openRows[0] || null;
+
+    // If no open session, check for today's record
+    if (!record) {
+      const [todayRows] = await pool.query(
+        `SELECT a.*, e.name AS employee_name
+         FROM attendance a
+         JOIN employees e ON a.employee_id = e.id
+         WHERE a.employee_id = ? AND a.date = CURDATE()`,
+        [employeeId]
+      );
+      record = todayRows[0] || null;
+    }
+
+    // Fetch employee's shift for that date using ONE SHARED FUNCTION
+    const targetDate = record ? record.date : new Date();
+    const shift = await getEmployeeShift(employeeId, targetDate);
 
     res.json({
       employeeId,
       record,
       hasCheckedIn: Boolean(record),
-      hasCheckedOut: Boolean(record && record.check_out)
+      hasCheckedOut: Boolean(record && record.check_out),
+      shift
     });
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch today attendance.', error: error.message });
@@ -136,6 +151,7 @@ router.get('/today', async (req, res) => {
 /**
  * POST /api/attendance/check-in
  * Records check-in for today. Prevents duplicate check-ins.
+ * Connects to shift system and evaluates late status based on grace period.
  */
 router.post('/check-in', async (req, res) => {
   try {
@@ -162,10 +178,27 @@ router.post('/check-in', async (req, res) => {
       return res.status(403).json({ message: 'Attendance records for this month are locked by approved payroll.' });
     }
 
-    // 2. Prevent duplicate check-in for the same date
+    const now = new Date();
+    let shiftDate = formatLocalDate(now);
+    let shift = await getEmployeeShift(employeeId, shiftDate);
+
+    // If check-in is early morning (before 12 PM), check if yesterday was a night shift crossing midnight without attendance
+    if (now.getHours() < 12) {
+      const yesterdayStr = formatLocalDate(new Date(now.getTime() - 86400000));
+      const yesterdayShift = await getEmployeeShift(employeeId, yesterdayStr);
+      if (yesterdayShift && yesterdayShift.crosses_midnight) {
+        const [yRec] = await pool.query('SELECT id FROM attendance WHERE employee_id = ? AND date = ?', [employeeId, yesterdayStr]);
+        if (yRec.length === 0) {
+          shiftDate = yesterdayStr;
+          shift = yesterdayShift;
+        }
+      }
+    }
+
+    // 2. Prevent duplicate check-in for the shift date
     const [existing] = await pool.query(
-      'SELECT id, check_in, check_out FROM attendance WHERE employee_id = ? AND date = CURDATE()',
-      [employeeId]
+      'SELECT id, check_in, check_out FROM attendance WHERE employee_id = ? AND date = ?',
+      [employeeId, shiftDate]
     );
 
     if (existing.length > 0) {
@@ -176,14 +209,13 @@ router.post('/check-in', async (req, res) => {
       });
     }
 
-    // 3. Determine check-in timestamp and calculate late arrival metrics
-    const now = new Date();
-    const { isLate, lateMinutes, status } = calculateLateDetails(now);
+    // 3. Determine late status using ONE SHARED FUNCTION
+    const { isLate, lateMinutes, status } = calculateLateStatus(now, shift);
 
     const [result] = await pool.query(
-      `INSERT INTO attendance (employee_id, date, check_in, is_late, late_minutes, status)
-       VALUES (?, CURDATE(), NOW(), ?, ?, ?)`,
-      [employeeId, isLate, lateMinutes, status]
+      `INSERT INTO attendance (employee_id, shift_id, date, check_in, is_late, late_minutes, status)
+       VALUES (?, ?, ?, NOW(), ?, ?, ?)`,
+      [employeeId, shift.id || null, shiftDate, isLate ? 1 : 0, lateMinutes, status]
     );
 
     const newId = result.insertId;
@@ -191,7 +223,7 @@ router.post('/check-in', async (req, res) => {
     const [savedRows] = await pool.query('SELECT * FROM attendance WHERE id = ?', [newId]);
     const savedRecord = savedRows[0];
 
-    // Optional: Log audit if late
+    // Log audit if late
     if (isLate) {
       logAudit({
         req,
@@ -199,7 +231,7 @@ router.post('/check-in', async (req, res) => {
         entityType: 'ATTENDANCE',
         entityId: newId,
         employeeName: employee.name,
-        details: `Late check-in recorded (${lateMinutes} mins late) on ${savedRecord.date}`
+        details: `Late check-in recorded (${lateMinutes} mins late against ${shift.name}) on ${savedRecord.date}`
       }).catch(() => {});
     }
 
@@ -207,7 +239,8 @@ router.post('/check-in', async (req, res) => {
       message: isLate
         ? `Check-in recorded. Marked late by ${lateMinutes} minutes.`
         : 'Check-in recorded successfully on time.',
-      attendance: savedRecord
+      attendance: savedRecord,
+      shift
     });
   } catch (error) {
     if (error.code === 'ER_DUP_ENTRY') {
@@ -219,7 +252,8 @@ router.post('/check-in', async (req, res) => {
 
 /**
  * POST /api/attendance/check-out
- * Records check-out for today. Prevents checkout without checkin, duplicate checkouts, and invalid times.
+ * Records check-out. Supports night shifts crossing midnight:
+ * checkout after midnight still belongs to the shift's start date.
  */
 router.post('/check-out', async (req, res) => {
   try {
@@ -228,16 +262,30 @@ router.post('/check-out', async (req, res) => {
       return res.status(400).json({ message: 'No linked employee profile found for your account.' });
     }
 
-    // 1. Fetch active check-in for today
+    // 1. Fetch active check-in (open session where check_out is NULL)
     const [existing] = await pool.query(
       `SELECT a.*, e.name AS employee_name
        FROM attendance a
        JOIN employees e ON a.employee_id = e.id
-       WHERE a.employee_id = ? AND a.date = CURDATE()`,
+       WHERE a.employee_id = ? AND a.check_out IS NULL
+       ORDER BY a.check_in DESC
+       LIMIT 1`,
       [employeeId]
     );
 
     if (existing.length === 0) {
+      // Check if already checked out today
+      const [doneToday] = await pool.query(
+        'SELECT id, check_in, check_out FROM attendance WHERE employee_id = ? AND date = CURDATE()',
+        [employeeId]
+      );
+      if (doneToday.length > 0 && doneToday[0].check_out) {
+        return res.status(400).json({
+          message: 'You have already checked out for today.',
+          alreadyCheckedOut: true,
+          record: doneToday[0]
+        });
+      }
       return res.status(400).json({
         message: 'No active check-in record found for today. Please check in first before checking out.'
       });
@@ -264,27 +312,34 @@ router.post('/check-out', async (req, res) => {
       });
     }
 
-    // 4. Calculate total working hours
-    const totalHours = calculateWorkHours(checkInTime, now);
+    // 4. Calculate total working hours deducting break minutes and check for short day
+    const shift = await getEmployeeShift(employeeId, record.date);
+    const { totalHours, isShortDay } = calculateWorkingHoursAndShortDay(checkInTime, now, shift);
+
     let finalStatus = record.status;
-    if (totalHours < 4 && finalStatus !== 'Late') {
+    if (isShortDay && finalStatus !== 'Late') {
       finalStatus = 'Half Day';
     }
 
     await pool.query(
       `UPDATE attendance 
-       SET check_out = NOW(), total_hours = ?, status = ?
+       SET check_out = NOW(), total_hours = ?, is_short_day = ?, status = ?
        WHERE id = ?`,
-      [totalHours, finalStatus, record.id]
+      [totalHours, isShortDay ? 1 : 0, finalStatus, record.id]
     );
 
     const [updatedRows] = await pool.query('SELECT * FROM attendance WHERE id = ?', [record.id]);
     const updatedRecord = updatedRows[0];
 
     res.json({
-      message: `Check-out recorded successfully. Total working time: ${totalHours} hours.`,
-      attendance: updatedRecord
+      message: `Check-out recorded successfully. Total working time: ${totalHours} hours.${isShortDay ? ' (Flagged as Short Day)' : ''}`,
+      attendance: updatedRecord,
+      shift
     });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to record check-out.', error: error.message });
+  }
+});
   } catch (error) {
     res.status(500).json({ message: 'Failed to record check-out.', error: error.message });
   }
@@ -423,6 +478,10 @@ router.get('/history', async (req, res) => {
         e.name AS employee_name,
         e.email AS employee_email,
         d.name AS department_name,
+        a.shift_id,
+        s.name AS shift_name,
+        s.type AS shift_type,
+        a.is_short_day,
         a.date,
         a.check_in,
         a.check_out,
@@ -436,6 +495,7 @@ router.get('/history', async (req, res) => {
       FROM attendance a
       JOIN employees e ON a.employee_id = e.id
       LEFT JOIN departments d ON e.department_id = d.id
+      LEFT JOIN shifts s ON a.shift_id = s.id
       ${whereClause}
       ORDER BY ${sortCol} ${sortDir}, a.check_in DESC
       LIMIT ? OFFSET ?

@@ -988,4 +988,61 @@ CREATE TABLE IF NOT EXISTS payroll_adjustments (
   INDEX idx_adj_emp_status (employee_id, status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+CREATE TABLE IF NOT EXISTS shifts (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  type ENUM('morning', 'evening', 'night', 'flexible') NOT NULL,
+  start_time TIME NULL,
+  end_time TIME NULL,
+  grace_minutes INT NOT NULL DEFAULT 0,
+  break_minutes INT NOT NULL DEFAULT 0,
+  min_working_minutes INT NOT NULL DEFAULT 480,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  is_default BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_shift_type (type),
+  INDEX idx_shift_active (is_active),
+  INDEX idx_shift_default (is_default)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shift_rotations (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  description TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS shift_rotation_steps (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  rotation_id INT NOT NULL,
+  week_number INT NOT NULL,
+  shift_id INT NOT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (rotation_id) REFERENCES shift_rotations(id) ON DELETE CASCADE,
+  FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE RESTRICT,
+  UNIQUE KEY unique_rot_week (rotation_id, week_number)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS employee_shift_assignments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  employee_id INT NOT NULL,
+  shift_id INT NULL,
+  rotation_id INT NULL,
+  start_date DATE NOT NULL,
+  end_date DATE NULL,
+  assigned_by INT NULL,
+  notes TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE CASCADE,
+  FOREIGN KEY (shift_id) REFERENCES shifts(id) ON DELETE RESTRICT,
+  FOREIGN KEY (rotation_id) REFERENCES shift_rotations(id) ON DELETE RESTRICT,
+  FOREIGN KEY (assigned_by) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_emp_assignment_dates (employee_id, start_date, end_date),
+  INDEX idx_shift_assignment (shift_id),
+  INDEX idx_rotation_assignment (rotation_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 SET FOREIGN_KEY_CHECKS = 1;

@@ -419,11 +419,25 @@ const Attendance = () => {
                 )}
 
                 {todayStatus.record?.is_late ? (
-                  <span className="badge badge-late" title="Arrived after 09:15 AM grace cutoff">
+                  <span className="badge badge-late" title={`Arrived late (${todayStatus.record.late_minutes}m)`}>
                     <AlertTriangle size={12} />
                     <span>Late ({todayStatus.record.late_minutes}m)</span>
                   </span>
                 ) : null}
+
+                {todayStatus.record?.is_short_day ? (
+                  <span className="badge badge-late" style={{ background: '#fef3c7', color: '#b45309', borderColor: '#fde68a' }} title="Working hours under shift minimum">
+                    <AlertTriangle size={12} />
+                    <span>Short Day</span>
+                  </span>
+                ) : null}
+
+                {todayStatus.shift && (
+                  <span className="badge badge-inactive" style={{ background: '#f8fafc', color: 'var(--text-secondary)' }} title="Assigned daily shift">
+                    <Clock size={12} />
+                    <span>{todayStatus.shift.name} ({todayStatus.shift.type === 'flexible' ? 'Flexible' : `${todayStatus.shift.start_time?.slice(0, 5)} - ${todayStatus.shift.end_time?.slice(0, 5)}`})</span>
+                  </span>
+                )}
 
                 {todayStatus.record?.is_corrected ? (
                   <span className="badge badge-corrected" title="Approved by Manager / HR">
