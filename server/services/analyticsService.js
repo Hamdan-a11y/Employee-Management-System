@@ -345,7 +345,14 @@ async function getAverageWorkingHours({ startMonth, endMonth, departmentId = nul
  * Approved overtime hours per month by type (regular, weekend, holiday).
  */
 async function getOvertimeTrend({ startMonth, endMonth, departmentId = null }) {
-  const { startDate, endDate } = resolveDateRange(startMonth, endMonth);
+  const { startDate, endDate, startMonth: sM, endMonth: eM } = resolveDateRange(startMonth, endMonth);
+
+  // Check if closed periods exist in range to use saved summaries
+  const [closedRows] = await pool.query(
+    "SELECT month FROM attendance_periods WHERE status = 'closed' AND month BETWEEN ? AND ?",
+    [sM, eM]
+  );
+  const closedMonths = closedRows.map((r) => r.month);
 
   let deptCondition = '';
   const params = [startDate, endDate];
@@ -353,6 +360,38 @@ async function getOvertimeTrend({ startMonth, endMonth, departmentId = null }) {
   if (departmentId && departmentId !== 'all') {
     deptCondition = ' AND e.department_id = ?';
     params.push(parseInt(departmentId, 10));
+  }
+
+  if (closedMonths.length > 0) {
+    const summaryParams = [closedMonths];
+    let summaryDeptCondition = '';
+    if (departmentId && departmentId !== 'all') {
+      summaryDeptCondition = ' AND e.department_id = ?';
+      summaryParams.push(parseInt(departmentId, 10));
+    }
+    const [summaryRows] = await pool.query(
+      `SELECT 
+        pas.month,
+        ROUND(SUM(pas.approved_overtime_regular_minutes) / 60.0, 2) AS regular_hours,
+        ROUND(SUM(pas.approved_overtime_weekend_minutes) / 60.0, 2) AS weekend_hours,
+        ROUND(SUM(pas.approved_overtime_holiday_minutes) / 60.0, 2) AS holiday_hours,
+        ROUND(SUM(pas.approved_overtime_minutes) / 60.0, 2) AS total_hours
+       FROM payroll_attendance_summary pas
+       JOIN employees e ON pas.employee_id = e.id
+       WHERE pas.month IN (?) ${summaryDeptCondition}
+       GROUP BY pas.month
+       ORDER BY pas.month ASC`,
+      summaryParams
+    );
+    if (summaryRows.length > 0) {
+      return summaryRows.map((r) => ({
+        month: r.month,
+        regular_hours: Number(r.regular_hours),
+        weekend_hours: Number(r.weekend_hours),
+        holiday_hours: Number(r.holiday_hours),
+        total_hours: Number(r.total_hours),
+      }));
+    }
   }
 
   const sql = `

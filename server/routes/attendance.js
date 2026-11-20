@@ -23,6 +23,7 @@ const {
 } = require('../services/shiftService');
 const { getAbsentDays } = require('../services/calendarService');
 const { calculateOvertime, recalculateOvertimeOnCorrection } = require('../services/overtimeService');
+const { assertPeriodOpen } = require('../services/periodService');
 
 // Protect all attendance routes with token authentication
 router.use(authenticateToken);
@@ -220,6 +221,9 @@ router.post('/check-in', attendanceLimiter, async (req, res) => {
       }
     }
 
+    // Shared guard: Period must be open
+    await assertPeriodOpen(shiftDate, conn);
+
     // 2. Prevent duplicate check-in for the shift date
     const [existing] = await conn.query(
       'SELECT id, check_in, check_out FROM attendance WHERE employee_id = ? AND date = ?',
@@ -409,6 +413,9 @@ router.post('/check-in', attendanceLimiter, async (req, res) => {
       await conn.rollback();
       conn.release();
     }
+    if (error.code === 'MONTH_CLOSED' || error.message === 'Month is closed' || error.statusCode === 403) {
+      return res.status(403).json({ message: 'Month is closed', error: error.message });
+    }
     if (error.code === 'ER_DUP_ENTRY') {
       return res.status(400).json({ message: 'You have already checked in for today.' });
     }
@@ -471,6 +478,9 @@ router.post('/check-out', attendanceLimiter, async (req, res) => {
     }
 
     const record = existing[0];
+
+    // Shared guard: Period must be open
+    await assertPeriodOpen(record.date, conn);
 
     // 2. Prevent duplicate checkout
     if (record.check_out) {
@@ -670,6 +680,9 @@ router.post('/check-out', attendanceLimiter, async (req, res) => {
     if (conn) {
       await conn.rollback();
       conn.release();
+    }
+    if (error.code === 'MONTH_CLOSED' || error.message === 'Month is closed' || error.statusCode === 403) {
+      return res.status(403).json({ message: 'Month is closed', error: error.message });
     }
     res.status(500).json({ message: 'Failed to record check-out.', error: error.message });
   }
@@ -1216,6 +1229,9 @@ router.post('/corrections', async (req, res) => {
     const formattedCheckOut = toMySqlDateTime(requested_check_out);
     const targetDate = formatLocalDate(date);
 
+    // Shared guard: Period must be open
+    await assertPeriodOpen(targetDate);
+
     const [result] = await pool.query(
       `INSERT INTO attendance_corrections 
         (attendance_id, employee_id, date, requested_check_in, requested_check_out, reason, status)
@@ -1254,6 +1270,9 @@ router.post('/corrections', async (req, res) => {
       correctionId
     });
   } catch (error) {
+    if (error.code === 'MONTH_CLOSED' || error.message === 'Month is closed' || error.statusCode === 403) {
+      return res.status(403).json({ message: 'Month is closed', error: error.message });
+    }
     res.status(500).json({ message: 'Failed to submit correction request.', error: error.message });
   }
 });
@@ -1374,6 +1393,9 @@ router.patch('/corrections/:id/approve', requirePermission('attendance.manage'),
       });
     }
 
+    // Shared guard: Period must be open
+    await assertPeriodOpen(correction.date);
+
     // Recalculate metrics based on requested times
     const checkIn = new Date(correction.requested_check_in);
     const checkOut = new Date(correction.requested_check_out);
@@ -1487,6 +1509,9 @@ router.patch('/corrections/:id/approve', requirePermission('attendance.manage'),
 
     res.json({ message: 'Attendance correction approved and records updated successfully.' });
   } catch (error) {
+    if (error.code === 'MONTH_CLOSED' || error.message === 'Month is closed' || error.statusCode === 403) {
+      return res.status(403).json({ message: 'Month is closed', error: error.message });
+    }
     res.status(500).json({ message: 'Failed to approve correction request.', error: error.message });
   }
 });
@@ -1528,6 +1553,9 @@ router.patch('/corrections/:id/reject', requirePermission('attendance.manage'), 
       });
     }
 
+    // Shared guard: Period must be open
+    await assertPeriodOpen(correction.date);
+
     const reason = rejection_reason && rejection_reason.trim() ? rejection_reason.trim() : 'Correction request rejected by administrator.';
 
     await pool.query(
@@ -1565,6 +1593,9 @@ router.patch('/corrections/:id/reject', requirePermission('attendance.manage'), 
 
     res.json({ message: 'Attendance correction request rejected successfully.' });
   } catch (error) {
+    if (error.code === 'MONTH_CLOSED' || error.message === 'Month is closed' || error.statusCode === 403) {
+      return res.status(403).json({ message: 'Month is closed', error: error.message });
+    }
     res.status(500).json({ message: 'Failed to reject correction request.', error: error.message });
   }
 });

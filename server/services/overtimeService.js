@@ -3,6 +3,7 @@ const { getEmployeeShift } = require('./shiftService');
 const { getDayType } = require('./calendarService');
 const { logAudit } = require('./auditLogger');
 const { notifyEmployeeUser, notifyDepartmentManager, emitDataChanged } = require('./notificationService');
+const { assertPeriodOpen } = require('./periodService');
 
 /**
  * Format a Date or date string to YYYY-MM-DD
@@ -24,6 +25,14 @@ async function isMonthClosed(date, connection = null) {
   const conn = connection || pool;
   const dateStr = formatLocalDate(date);
   const monthStr = dateStr.slice(0, 7);
+
+  const [periodRows] = await conn.query(
+    "SELECT status FROM attendance_periods WHERE month = ? LIMIT 1",
+    [monthStr]
+  );
+  if (periodRows.length > 0 && periodRows[0].status === 'closed') {
+    return true;
+  }
 
   const [rows] = await conn.query(
     "SELECT id, status FROM payroll_runs WHERE month = ? AND status IN ('Approved', 'Locked')",
@@ -297,6 +306,8 @@ async function calculateOvertime(employeeId, date, options = {}) {
 
   // 9. Persist into `overtime_requests` table
   if (shouldSave) {
+    await assertPeriodOpen(dateStr, conn);
+
     let comment = null;
     if (overCap) {
       const reasons = [];
@@ -407,12 +418,7 @@ async function approveOvertimeRequest({ requestId, reviewerUser, approvedMinutes
     const request = rows[0];
 
     // Closed month check
-    const closed = await isMonthClosed(request.work_date, conn);
-    if (closed) {
-      const err = new Error('Cannot modify overtime for a closed/locked payroll month.');
-      err.status = 403;
-      throw err;
-    }
+    await assertPeriodOpen(request.work_date, conn);
 
     // Locked status check
     if (request.status === 'approved' || request.status === 'rejected') {
@@ -552,12 +558,7 @@ async function rejectOvertimeRequest({ requestId, reviewerUser, comment, req = n
     const request = rows[0];
 
     // Closed month check
-    const closed = await isMonthClosed(request.work_date, conn);
-    if (closed) {
-      const err = new Error('Cannot modify overtime for a closed/locked payroll month.');
-      err.status = 403;
-      throw err;
-    }
+    await assertPeriodOpen(request.work_date, conn);
 
     // Locked status check
     if (request.status === 'approved' || request.status === 'rejected') {

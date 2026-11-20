@@ -1,6 +1,7 @@
 const pool = require('../db');
 const { isMonthLocked } = require('../services/calendarService');
 const { getKarachiDate, runJob } = require('./runner');
+const { assertPeriodOpen } = require('../services/periodService');
 
 /**
  * Calculates prior month string ('YYYY-MM') from Karachi date
@@ -20,6 +21,8 @@ async function executeMonthlyReport(context = {}) {
   const targetMonth = context.month || getPreviousMonthString(context.date || getKarachiDate());
 
   // Rule: Never overwrite or generate for a closed / locked month
+  await assertPeriodOpen(`${targetMonth}-01`);
+
   const isLocked = await isMonthLocked(`${targetMonth}-01`);
   if (isLocked) {
     console.log(`[monthly_report] Month ${targetMonth} is closed/locked. Skipping generation.`);

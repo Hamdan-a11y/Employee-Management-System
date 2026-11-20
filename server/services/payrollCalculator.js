@@ -133,6 +133,7 @@ function calculateEmployeePayslip({
   overtimeRequests = null,
   pendingAdjustments = [],
   prevMonthPayslip = null,
+  attendanceSummary = null,
   settings = {
     late_arrival_threshold: 3,
     late_deduction_days: 1.0,
@@ -239,46 +240,127 @@ function calculateEmployeePayslip({
     });
   }
 
-  // Attendance & Leave maps
-  const attendanceByDate = new Map();
-  for (const record of attendanceRecords) {
-    const dStr = formatDate(record.date);
-    attendanceByDate.set(dStr, record);
-  }
+  // Attendance, Leave & Overtime data resolution
+  let unpaidWorkingDaysCount = 0;
+  let unpaidLeaveRecords = [];
+  let absentDaysCount = 0;
+  let absentAttendanceIds = [];
+  let missingAttendanceDates = [];
+  let lateArrivalsCount = 0;
+  let lateRecords = [];
+  let totalOvertimeHours = 0;
+  let overtimePay = 0;
+  let overtimeMultiplier = Number(settings.overtime_multiplier) || 1.5;
+  const overtimeEntityIds = [];
 
-  // Approved leave coverage set
-  // Map dateStr -> leaveRequest
-  const approvedLeavesByDate = new Map();
-  const unpaidLeaveDaysSet = new Set();
-  const unpaidLeaveRecords = [];
+  if (attendanceSummary) {
+    unpaidWorkingDaysCount = Number(attendanceSummary.leave_days_unpaid || 0);
+    absentDaysCount = Number(attendanceSummary.absent_days || 0);
+    lateArrivalsCount = Number(attendanceSummary.late_count || 0);
 
-  for (const leave of leaveRequests) {
-    if (leave.status !== 'APPROVED') continue;
-    const start = new Date(leave.start_date);
-    const end = new Date(leave.end_date);
-    const cur = new Date(start);
+    const regMins = Number(attendanceSummary.approved_overtime_regular_minutes || 0);
+    const wkndMins = Number(attendanceSummary.approved_overtime_weekend_minutes || 0);
+    const holMins = Number(attendanceSummary.approved_overtime_holiday_minutes || 0);
+    const totMins = Number(attendanceSummary.approved_overtime_minutes || (regMins + wkndMins + holMins));
 
-    while (cur <= end) {
-      const curStr = formatDate(cur);
-      approvedLeavesByDate.set(curStr, leave);
-      if (leave.leave_type === 'Unpaid') {
-        unpaidLeaveDaysSet.add(curStr);
-        if (!unpaidLeaveRecords.includes(leave.id)) {
-          unpaidLeaveRecords.push(leave.id);
+    totalOvertimeHours = Math.round((totMins / 60.0) * 100) / 100;
+    const regPay = (regMins / 60.0) * hourlyRate * overtimeMultiplier;
+    const wkndPay = (wkndMins / 60.0) * hourlyRate * 2.0;
+    const holPay = (holMins / 60.0) * hourlyRate * 2.5;
+    overtimePay = roundToTwo(regPay + wkndPay + holPay);
+  } else {
+    // Attendance & Leave maps
+    const attendanceByDate = new Map();
+    for (const record of attendanceRecords) {
+      const dStr = formatDate(record.date);
+      attendanceByDate.set(dStr, record);
+    }
+
+    // Approved leave coverage set
+    // Map dateStr -> leaveRequest
+    const approvedLeavesByDate = new Map();
+    const unpaidLeaveDaysSet = new Set();
+
+    for (const leave of leaveRequests) {
+      if (leave.status !== 'APPROVED') continue;
+      const start = new Date(leave.start_date);
+      const end = new Date(leave.end_date);
+      const cur = new Date(start);
+
+      while (cur <= end) {
+        const curStr = formatDate(cur);
+        approvedLeavesByDate.set(curStr, leave);
+        if (leave.leave_type === 'Unpaid') {
+          unpaidLeaveDaysSet.add(curStr);
+          if (!unpaidLeaveRecords.includes(leave.id)) {
+            unpaidLeaveRecords.push(leave.id);
+          }
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+
+    // 1. Unpaid Leave Count
+    for (const dateStr of payableWorkingDates) {
+      if (unpaidLeaveDaysSet.has(dateStr)) {
+        unpaidWorkingDaysCount++;
+      }
+    }
+
+    // 2. Absences: working days with no attendance punch AND not covered by approved leave
+    const absentDates = [];
+    for (const dateStr of payableWorkingDates) {
+      if (approvedLeavesByDate.has(dateStr)) {
+        continue;
+      }
+
+      const att = attendanceByDate.get(dateStr);
+      if (!att) {
+        absentDates.push(dateStr);
+        missingAttendanceDates.push(dateStr);
+      } else if (att.status === 'Absent') {
+        absentDates.push(dateStr);
+        absentAttendanceIds.push(att.id);
+      } else if (!att.check_out && att.status !== 'Present') {
+        missingAttendanceDates.push(dateStr);
+      }
+    }
+    absentDaysCount = absentDates.length;
+
+    // 3. Late arrivals
+    lateRecords = attendanceRecords.filter((r) => r.is_late || r.status === 'Late');
+    lateArrivalsCount = lateRecords.length;
+
+    // 4. Overtime calculation (APPROVED overtime only)
+    if (Array.isArray(overtimeRequests)) {
+      const approvedOt = overtimeRequests.filter(
+        (r) => r.status && r.status.toLowerCase() === 'approved'
+      );
+      for (const ot of approvedOt) {
+        const otHours = (Number(ot.minutes) || 0) / 60.0;
+        const mult = Number(ot.multiplier) || overtimeMultiplier;
+        const pay = roundToTwo(otHours * hourlyRate * mult);
+        totalOvertimeHours += otHours;
+        overtimePay += pay;
+        overtimeEntityIds.push(ot.id);
+      }
+      totalOvertimeHours = Math.round(totalOvertimeHours * 100) / 100;
+      overtimePay = roundToTwo(overtimePay);
+    } else {
+      for (const record of attendanceRecords) {
+        const hrs = Number(record.total_hours) || 0;
+        if (hrs > standardHours) {
+          const extra = hrs - standardHours;
+          totalOvertimeHours += extra;
+          overtimeEntityIds.push(record.id);
         }
       }
-      cur.setDate(cur.getDate() + 1);
+      totalOvertimeHours = Math.round(totalOvertimeHours * 100) / 100;
+      overtimePay = roundToTwo(totalOvertimeHours * hourlyRate * overtimeMultiplier);
     }
   }
 
   // 1. Unpaid Leave Deduction
-  let unpaidWorkingDaysCount = 0;
-  for (const dateStr of payableWorkingDates) {
-    if (unpaidLeaveDaysSet.has(dateStr)) {
-      unpaidWorkingDaysCount++;
-    }
-  }
-
   const unpaidLeaveDeduction = roundToTwo(unpaidWorkingDaysCount * dailyRate);
   if (unpaidWorkingDaysCount > 0) {
     lineItems.push({
@@ -293,31 +375,7 @@ function calculateEmployeePayslip({
     });
   }
 
-  // 2. Absences: working days with no attendance punch AND not covered by approved leave
-  const absentDates = [];
-  const missingAttendanceDates = [];
-  const absentAttendanceIds = [];
-
-  for (const dateStr of payableWorkingDates) {
-    // If covered by any approved leave, not an unapproved absence
-    if (approvedLeavesByDate.has(dateStr)) {
-      continue;
-    }
-
-    const att = attendanceByDate.get(dateStr);
-    if (!att) {
-      // Missing attendance on a scheduled working day
-      absentDates.push(dateStr);
-      missingAttendanceDates.push(dateStr);
-    } else if (att.status === 'Absent') {
-      absentDates.push(dateStr);
-      absentAttendanceIds.push(att.id);
-    } else if (!att.check_out && att.status !== 'Present') {
-      missingAttendanceDates.push(dateStr);
-    }
-  }
-
-  const absentDaysCount = absentDates.length;
+  // 2. Absence Deduction
   const absenceDeduction = roundToTwo(absentDaysCount * dailyRate);
   if (absentDaysCount > 0) {
     lineItems.push({
@@ -341,8 +399,6 @@ function calculateEmployeePayslip({
   }
 
   // 3. Late arrivals deduction
-  const lateRecords = attendanceRecords.filter((r) => r.is_late || r.status === 'Late');
-  const lateArrivalsCount = lateRecords.length;
   const lateThreshold = Number(settings.late_arrival_threshold) || 3;
   const deductionDaysPerBatch = Number(settings.late_deduction_days) || 1.0;
 
@@ -376,41 +432,7 @@ function calculateEmployeePayslip({
     }
   }
 
-  // 4. Overtime calculation (APPROVED overtime only)
-  let totalOvertimeHours = 0;
-  let overtimePay = 0;
-  let overtimeMultiplier = Number(settings.overtime_multiplier) || 1.5;
-  const overtimeEntityIds = [];
-
-  if (Array.isArray(overtimeRequests)) {
-    // Strictly filter by APPROVED status
-    const approvedOt = overtimeRequests.filter(
-      (r) => r.status && r.status.toLowerCase() === 'approved'
-    );
-    for (const ot of approvedOt) {
-      const otHours = (Number(ot.minutes) || 0) / 60.0;
-      const mult = Number(ot.multiplier) || overtimeMultiplier;
-      const pay = roundToTwo(otHours * hourlyRate * mult);
-      totalOvertimeHours += otHours;
-      overtimePay += pay;
-      overtimeEntityIds.push(ot.id);
-    }
-    totalOvertimeHours = Math.round(totalOvertimeHours * 100) / 100;
-    overtimePay = roundToTwo(overtimePay);
-  } else {
-    // Fallback if overtimeRequests not provided (for backward compatibility)
-    for (const record of attendanceRecords) {
-      const hrs = Number(record.total_hours) || 0;
-      if (hrs > standardHours) {
-        const extra = hrs - standardHours;
-        totalOvertimeHours += extra;
-        overtimeEntityIds.push(record.id);
-      }
-    }
-    totalOvertimeHours = Math.round(totalOvertimeHours * 100) / 100;
-    overtimePay = roundToTwo(totalOvertimeHours * hourlyRate * overtimeMultiplier);
-  }
-
+  // 4. Overtime line item
   if (totalOvertimeHours > 0) {
     lineItems.push({
       category: 'EARNING',

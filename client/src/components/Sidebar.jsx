@@ -23,7 +23,8 @@ import {
   Sun,
   Timer,
   Cpu,
-  BarChart3
+  BarChart3,
+  Lock
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import './Sidebar.css';
@@ -191,6 +192,11 @@ const Sidebar = () => {
       to: '/payroll',
       label: 'Payroll',
       icon: DollarSign,
+    });
+    navItems.push({
+      to: '/monthly-closing',
+      label: 'Monthly Closing',
+      icon: Lock,
     });
   }
 

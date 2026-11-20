@@ -10,6 +10,7 @@ const {
   isMonthLocked,
   recalculateApprovedLeavesForHoliday
 } = require('../services/calendarService');
+const { assertPeriodOpen } = require('../services/periodService');
 
 // All holiday routes require authentication
 router.use(authenticateToken);
@@ -103,7 +104,10 @@ router.post('/', requirePermission(PERMISSIONS.HOLIDAY_MANAGE), async (req, res)
       return res.status(400).json({ message: 'Department is required for department-scoped holidays.' });
     }
 
-    // Check if month is locked
+    // Check if month is locked or closed
+    await assertPeriodOpen(startDateStr, conn);
+    if (endDateStr) await assertPeriodOpen(endDateStr, conn);
+
     const startMonth = startDateStr.slice(0, 7);
     const endMonth = endDateStr ? endDateStr.slice(0, 7) : startMonth;
     const isStartLocked = await isMonthLocked(startMonth, conn);
@@ -193,6 +197,7 @@ router.put('/:id', requirePermission(PERMISSIONS.HOLIDAY_MANAGE), async (req, re
 
     // Check if existing month is locked
     const currStartMonth = formatDate(currentHoliday.date).slice(0, 7);
+    await assertPeriodOpen(currStartMonth, conn);
     if (await isMonthLocked(currStartMonth, conn)) {
       return res.status(403).json({
         message: 'Holidays in a closed or locked attendance month cannot be edited.'
@@ -273,6 +278,7 @@ router.delete('/:id', requirePermission(PERMISSIONS.HOLIDAY_MANAGE), async (req,
     const holiday = existing[0];
 
     const startMonth = formatDate(holiday.date).slice(0, 7);
+    await assertPeriodOpen(startMonth, conn);
     if (await isMonthLocked(startMonth, conn)) {
       return res.status(403).json({
         message: 'Holidays in a closed or locked attendance month cannot be deleted.'

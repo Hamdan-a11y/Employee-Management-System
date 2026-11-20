@@ -6,6 +6,7 @@ const { requirePermission, verifyDepartmentAccess } = require('../middleware/rba
 const { logAudit } = require('../services/auditLogger');
 const { notifyEmployeeUser, notifyDepartmentManager, notifyAdmins, emitDataChanged } = require('../services/notificationService');
 const { getWorkingDays, formatDate } = require('../services/calendarService');
+const { assertPeriodOpen } = require('../services/periodService');
 
 // All leave endpoints require authentication
 router.use(authenticateToken);
@@ -569,6 +570,10 @@ router.patch('/requests/:id/approve', requirePermission('leave.manage'), async (
       return res.status(400).json({ message: `Leave request has already been ${leaveReq.status.toLowerCase()}.` });
     }
 
+    // Shared guard: Month must be open
+    await assertPeriodOpen(leaveReq.start_date, conn);
+    await assertPeriodOpen(leaveReq.end_date, conn);
+
     // Deduct from leave balance if not Unpaid
     const leaveYear = new Date(leaveReq.start_date).getFullYear();
     const balance = await getOrInitLeaveBalance(conn, leaveReq.employee_id, leaveYear);
@@ -677,6 +682,9 @@ router.patch('/requests/:id/approve', requirePermission('leave.manage'), async (
     });
   } catch (err) {
     await conn.rollback();
+    if (err.code === 'MONTH_CLOSED' || err.message === 'Month is closed' || err.statusCode === 403) {
+      return res.status(403).json({ message: 'Month is closed', error: err.message });
+    }
     console.error('[Leaves API] Error approving leave request:', err);
     return res.status(500).json({ message: 'Failed to approve leave request.' });
   } finally {
@@ -721,6 +729,9 @@ router.patch('/requests/:id/reject', requirePermission('leave.manage'), async (r
     if (leaveReq.status !== 'PENDING') {
       return res.status(400).json({ message: `Leave request has already been ${leaveReq.status.toLowerCase()}.` });
     }
+
+    // Shared guard: Month must be open
+    await assertPeriodOpen(leaveReq.start_date, pool);
 
     const finalReason = rejection_reason && rejection_reason.trim()
       ? rejection_reason.trim()
@@ -771,6 +782,9 @@ router.patch('/requests/:id/reject', requirePermission('leave.manage'), async (r
       status: 'REJECTED',
     });
   } catch (err) {
+    if (err.code === 'MONTH_CLOSED' || err.message === 'Month is closed' || err.statusCode === 403) {
+      return res.status(403).json({ message: 'Month is closed', error: err.message });
+    }
     console.error('[Leaves API] Error rejecting leave request:', err);
     return res.status(500).json({ message: 'Failed to reject leave request.' });
   }
@@ -812,6 +826,9 @@ router.delete('/requests/:id', async (req, res) => {
       return res.status(400).json({ message: `Cannot cancel a leave request that is already ${leaveReq.status.toLowerCase()}.` });
     }
 
+    // Shared guard: Month must be open
+    await assertPeriodOpen(leaveReq.start_date, pool);
+
     await pool.query('DELETE FROM leave_requests WHERE id = ?', [requestId]);
 
     await logAudit({
@@ -825,6 +842,9 @@ router.delete('/requests/:id', async (req, res) => {
 
     return res.status(200).json({ message: 'Leave request cancelled successfully.' });
   } catch (err) {
+    if (err.code === 'MONTH_CLOSED' || err.message === 'Month is closed' || err.statusCode === 403) {
+      return res.status(403).json({ message: 'Month is closed', error: err.message });
+    }
     console.error('[Leaves API] Error cancelling leave request:', err);
     return res.status(500).json({ message: 'Failed to cancel leave request.' });
   }

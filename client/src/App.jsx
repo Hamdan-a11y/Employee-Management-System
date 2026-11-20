@@ -30,6 +30,7 @@ import Overtime from './pages/Overtime';
 import JobRuns from './pages/JobRuns';
 import Notifications from './pages/Notifications';
 import Analytics from './pages/Analytics';
+import MonthlyClosing from './pages/MonthlyClosing';
 
 function App() {
   return (
@@ -276,6 +277,14 @@ function App() {
             element={
               <ProtectedRoute>
                 <Analytics />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/monthly-closing"
+            element={
+              <ProtectedRoute>
+                <MonthlyClosing />
               </ProtectedRoute>
             }
           />

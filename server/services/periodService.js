@@ -141,10 +141,10 @@ async function getClosingChecklist(monthStr) {
      FROM employees e
      LEFT JOIN departments d ON e.department_id = d.id
      LEFT JOIN employee_shift_assignments esa ON e.id = esa.employee_id
-       AND esa.effective_from <= ?
+       AND esa.start_date <= ? AND (esa.end_date IS NULL OR esa.end_date >= ?)
      WHERE e.deleted_at IS NULL AND (e.status = 'Active' OR e.status IS NULL)
        AND esa.id IS NULL`,
-    [endDate]
+    [endDate, startDate]
   );
 
   const totalPending =
@@ -514,7 +514,7 @@ async function reopenPeriod({ monthStr, userId, userRole, reason, req = null }) 
     await conn.query(
       `INSERT INTO period_history (month, action, user_id, reason)
        VALUES (?, 'reopened', ?, ?)`,
-      [month, 'reopened', userId, reason.trim()]
+      [month, userId, reason.trim()]
     );
 
     await conn.commit();

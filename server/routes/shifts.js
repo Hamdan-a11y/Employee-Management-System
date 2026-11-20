@@ -14,6 +14,7 @@ const {
   assignShiftToDepartment,
   closeAssignment
 } = require('../services/shiftService');
+const { assertPeriodOpen } = require('../services/periodService');
 
 // All shift endpoints require token authentication
 router.use(authenticateToken);
@@ -741,6 +742,9 @@ router.post('/assignments', async (req, res) => {
     if (!start_date) {
       return res.status(400).json({ message: 'Start date is required.' });
     }
+
+    // Shared guard: cannot change shift in closed month
+    await assertPeriodOpen(start_date);
 
     if (!shift_id && !rotation_id) {
       return res.status(400).json({ message: 'Must specify either a shift or a rotation pattern.' });

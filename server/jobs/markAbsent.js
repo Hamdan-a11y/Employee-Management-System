@@ -2,6 +2,7 @@ const pool = require('../db');
 const { getEmployeeShift } = require('../services/shiftService');
 const { getDayType, isMonthLocked } = require('../services/calendarService');
 const { getKarachiDate, getKarachiTime, runJob } = require('./runner');
+const { assertPeriodOpen } = require('../services/periodService');
 
 /**
  * Checks whether a given shift has fully ended relative to Karachi wall-clock time.
@@ -59,7 +60,9 @@ async function executeMarkAbsent(context = {}) {
   const karachiDate = getKarachiDate();
   const karachiTime = getKarachiTime();
 
-  // 1. Skip if month is closed/locked
+  // 1. Guard: Check if month is closed
+  await assertPeriodOpen(targetDate);
+
   const isLocked = await isMonthLocked(targetDate);
   if (isLocked) {
     console.log(`[mark_absent] Month for ${targetDate} is locked/closed. Skipping.`);

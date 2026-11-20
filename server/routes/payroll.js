@@ -498,6 +498,22 @@ router.post('/runs/generate', requirePermission('payroll.manage'), async (req, r
 
     await conn.beginTransaction();
 
+    // 0. Enforce: Payroll can only run for a closed month
+    const [periodRows] = await conn.query('SELECT status FROM attendance_periods WHERE month = ?', [month]);
+    if (periodRows.length === 0 || periodRows[0].status !== 'closed') {
+      await conn.rollback();
+      return res.status(400).json({
+        message: `Cannot generate payroll for ${month}. The attendance month is not closed. Monthly closing must be completed first.`
+      });
+    }
+
+    // 0.5 Read pre-aggregated attendance summaries from payroll_attendance_summary
+    const [summaryRows] = await conn.query('SELECT * FROM payroll_attendance_summary WHERE month = ?', [month]);
+    const summaryByEmp = new Map();
+    for (const s of summaryRows) {
+      summaryByEmp.set(s.employee_id, s);
+    }
+
     // 1. Check if run already exists for this month (enforce single run per month)
     const [existingRun] = await conn.query('SELECT id, status FROM payroll_runs WHERE month = ?', [month]);
     if (existingRun.length > 0) {
@@ -644,6 +660,7 @@ router.post('/runs/generate', requirePermission('payroll.manage'), async (req, r
         overtimeRequests: empOvertime,
         pendingAdjustments: empAdjustments,
         prevMonthPayslip: prevPs,
+        attendanceSummary: summaryByEmp.get(emp.id) || null,
         settings
       });
 
