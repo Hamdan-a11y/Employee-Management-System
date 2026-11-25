@@ -2,6 +2,7 @@ const jwt = require('jsonwebtoken');
 const pool = require('../db');
 const { getAccessTokenFromReq } = require('../utils/cookies');
 const { getPermissionsForRole } = require('../config/permissions');
+const { logSecurityEvent } = require('../services/securityService');
 
 const authenticateToken = async (req, res, next) => {
   // Read token from HttpOnly cookie first, then fallback to header
@@ -19,7 +20,7 @@ const authenticateToken = async (req, res, next) => {
 
     // Fetch user details including role, linked employee_id, and department_id
     const [users] = await pool.query(
-      'SELECT id, name, email, role, employee_id, department_id, token_version FROM users WHERE id = ?',
+      'SELECT id, name, email, role, employee_id, department_id, token_version, is_active FROM users WHERE id = ?',
       [decoded.id]
     );
 
@@ -28,6 +29,13 @@ const authenticateToken = async (req, res, next) => {
     }
 
     const user = users[0];
+
+    if (user.is_active === 0 || user.is_active === false) {
+      return res.status(401).json({
+        message: 'Account has been disabled. Please contact an administrator.',
+        code: 'ACCOUNT_DISABLED',
+      });
+    }
 
     if (decoded.token_version !== undefined && user.token_version !== decoded.token_version) {
       return res.status(401).json({
@@ -87,6 +95,11 @@ const requireRole = (...roles) => {
     }
 
     if (!roles.includes(req.user.role)) {
+      logSecurityEvent({
+        type: 'permission_denied',
+        req,
+        details: `Role ${req.user.role} denied access to ${req.method} ${req.originalUrl}`,
+      });
       return res.status(403).json({
         message: `Access denied. Requires one of the following roles: ${roles.join(', ')}.`,
         userRole: req.user.role

@@ -16,7 +16,7 @@ const getAccessTokenCookieOptions = () => ({
 const getRefreshTokenCookieOptions = () => ({
   httpOnly: true,
   secure: isProduction,
-  sameSite: 'lax',
+  sameSite: 'strict',
   path: '/api/auth',
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 });
@@ -62,7 +62,7 @@ const clearAuthCookies = (res) => {
   res.clearCookie(REFRESH_COOKIE_NAME, {
     httpOnly: true,
     secure: isProduction,
-    sameSite: 'lax',
+    sameSite: 'strict',
     path: '/api/auth',
   });
 

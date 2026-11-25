@@ -7,6 +7,8 @@ const pool = require('../db');
 const { sendPasswordResetEmail } = require('../services/mailer');
 const { createPasswordResetLimiter } = require('../middleware/rateLimiter');
 const authenticateToken = require('../middleware/auth');
+const { requireAdmin } = require('../middleware/auth');
+const { validateBody, z } = require('../middleware/validate');
 const { notifyUser } = require('../services/notificationService');
 const { getPermissionsForRole } = require('../config/permissions');
 const {
@@ -16,6 +18,11 @@ const {
 } = require('../utils/cookies');
 const { generateCsrfToken } = require('../middleware/csrf');
 const { isAllowedOrigin } = require('../utils/corsOrigins');
+const {
+  getRequestMeta,
+  logSecurityEvent,
+  checkAndNotifyNewDevice,
+} = require('../services/securityService');
 
 // Rate limiter for password reset requests: 5 per IP and 3 per Email per 15 minutes
 const passwordResetLimiter = createPasswordResetLimiter({
@@ -49,14 +56,20 @@ const validatePassword = (password) => {
  * Issues short-lived access token (15m) and long-lived refresh token (7d)
  * and sets them as secure HttpOnly cookies.
  */
-const issueAuthSession = async (user, res) => {
-  const userId = user.id || user.user_id;
+const issueAuthSession = async (user, req, res, { familyId = null, checkNewDevice = false } = {}) => {
+  const userId = user.user_id || user.id;
   const userRole = user.role || 'employee';
   let employeeId = user.employee_id || null;
 
   if (!employeeId) {
     const [matched] = await pool.query('SELECT id FROM employees WHERE LOWER(email) = LOWER(?)', [user.email]);
     if (matched.length > 0) employeeId = matched[0].id;
+  }
+
+  const { ip, userAgent, deviceId } = getRequestMeta(req, res);
+
+  if (checkNewDevice) {
+    await checkAndNotifyNewDevice({ userId, ip, userAgent, deviceId });
   }
 
   // 1. Access Token (15 min)
@@ -77,10 +90,11 @@ const issueAuthSession = async (user, res) => {
   const rawRefreshToken = crypto.randomBytes(32).toString('hex');
   const refreshTokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
   const refreshExpiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+  const effectiveFamilyId = familyId || crypto.randomUUID();
 
-  await pool.query(
-    'INSERT INTO refresh_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)',
-    [userId, refreshTokenHash, refreshExpiresAt]
+  const [rtResult] = await pool.query(
+    'INSERT INTO refresh_tokens (user_id, token_hash, family_id, device_id, ip, user_agent, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [userId, refreshTokenHash, effectiveFamilyId, deviceId, ip, userAgent, refreshExpiresAt]
   );
 
   // 3. CSRF Token
@@ -93,7 +107,7 @@ const issueAuthSession = async (user, res) => {
     csrfToken,
   });
 
-  return { accessToken, csrfToken };
+  return { accessToken, csrfToken, refreshTokenId: rtResult.insertId };
 };
 
 // GET /api/auth/me - Verify current session from HttpOnly cookie
@@ -155,10 +169,11 @@ router.post('/register', async (req, res) => {
       employee_id: linkedEmpId,
       token_version: 1
     };
-    await issueAuthSession(newUser, res);
+    const { accessToken } = await issueAuthSession(newUser, req, res);
 
     res.status(201).json({
       message: 'User registered successfully!',
+      accessToken,
       user: {
         id: newUser.id,
         name: newUser.name,
@@ -168,7 +183,7 @@ router.post('/register', async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error during registration.', error: error.message });
+    res.status(500).json({ message: 'Server error during registration.' });
   }
 });
 
@@ -193,13 +208,34 @@ router.post('/login', async (req, res) => {
 
     const [users] = await pool.query('SELECT * FROM users WHERE email = ?', [normalizedEmail]);
     if (users.length === 0) {
+      await logSecurityEvent({
+        type: 'login_failed',
+        req,
+        details: `Failed login attempt for unknown email: ${normalizedEmail}`,
+      });
       return res.status(400).json({ message: 'Invalid email or password.' });
     }
 
     const user = users[0];
 
+    if (user.is_active === 0 || user.is_active === false) {
+      await logSecurityEvent({
+        type: 'login_failed',
+        userId: user.id,
+        req,
+        details: 'Login attempt on disabled account.',
+      });
+      return res.status(401).json({ message: 'Account has been disabled. Please contact an administrator.' });
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
     if (!isMatch) {
+      await logSecurityEvent({
+        type: 'login_failed',
+        userId: user.id,
+        req,
+        details: 'Failed login attempt (invalid password).',
+      });
       return res.status(400).json({ message: 'Invalid email or password.' });
     }
 
@@ -213,10 +249,11 @@ router.post('/login', async (req, res) => {
     }
     user.employee_id = employeeId;
 
-    await issueAuthSession(user, res);
+    const { accessToken } = await issueAuthSession(user, req, res, { checkNewDevice: true });
 
     res.json({
       message: 'Login successful!',
+      accessToken,
       user: {
         id: user.id,
         name: user.name,
@@ -228,11 +265,11 @@ router.post('/login', async (req, res) => {
       },
     });
   } catch (error) {
-    res.status(500).json({ message: 'Server error during login.', error: error.message });
+    res.status(500).json({ message: 'Server error during login.' });
   }
 });
 
-// POST /api/auth/refresh - Rotate refresh token and issue new access token
+// POST /api/auth/refresh - Rotate refresh token and detect token reuse
 router.post('/refresh', async (req, res) => {
   try {
     const rawRefreshToken = getRefreshTokenFromReq(req);
@@ -244,10 +281,11 @@ router.post('/refresh', async (req, res) => {
     const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
 
     const [tokens] = await pool.query(
-      `SELECT rt.id, rt.user_id, u.name, u.email, u.role, u.employee_id, u.token_version 
-       FROM refresh_tokens rt 
-       JOIN users u ON rt.user_id = u.id 
-       WHERE rt.token_hash = ? AND rt.expires_at > NOW()`,
+      `SELECT rt.id, rt.user_id, rt.family_id, rt.revoked_at, rt.expires_at,
+              u.name, u.email, u.role, u.employee_id, u.department_id, u.token_version, u.is_active
+       FROM refresh_tokens rt
+       JOIN users u ON rt.user_id = u.id
+       WHERE rt.token_hash = ?`,
       [tokenHash]
     );
 
@@ -258,43 +296,279 @@ router.post('/refresh', async (req, res) => {
 
     const record = tokens[0];
 
-    // Invalidate used refresh token (Rotation)
-    await pool.query('DELETE FROM refresh_tokens WHERE id = ?', [record.id]);
+    // Reuse detection: if a revoked token is presented again, revoke the entire family
+    if (record.revoked_at !== null) {
+      await pool.query(
+        'UPDATE refresh_tokens SET revoked_at = NOW() WHERE family_id = ? AND revoked_at IS NULL',
+        [record.family_id]
+      );
+      await logSecurityEvent({
+        type: 'token_reuse',
+        userId: record.user_id,
+        req,
+        details: `Revoked refresh token reused (token_id=${record.id}, family=${record.family_id}). Whole family revoked.`,
+      });
+      clearAuthCookies(res);
+      return res.status(401).json({
+        message: 'Refresh token reuse detected. All sessions in this family have been revoked.',
+        code: 'TOKEN_REUSE_DETECTED',
+      });
+    }
 
-    // Issue fresh access + refresh tokens
-    await issueAuthSession(record, res);
+    if (new Date(record.expires_at) <= new Date() || record.is_active === 0 || record.is_active === false) {
+      clearAuthCookies(res);
+      return res.status(401).json({ message: 'Invalid or expired refresh token. Please sign in again.' });
+    }
+
+    // Issue fresh access + refresh tokens in the same family
+    const { accessToken, refreshTokenId } = await issueAuthSession(
+      { ...record, id: record.user_id },
+      req,
+      res,
+      {
+        familyId: record.family_id,
+        checkNewDevice: false,
+      }
+    );
+
+    // Mark old refresh token as revoked and replaced
+    await pool.query(
+      'UPDATE refresh_tokens SET revoked_at = NOW(), replaced_by = ? WHERE id = ?',
+      [refreshTokenId, record.id]
+    );
 
     res.json({
       message: 'Session refreshed successfully.',
+      accessToken,
       user: {
         id: record.user_id,
         name: record.name,
         email: record.email,
         role: record.role || 'employee',
-        employee_id: record.employee_id || null
+        employee_id: record.employee_id || null,
+        department_id: record.department_id || null,
+        permissions: getPermissionsForRole(record.role || 'employee'),
       },
     });
   } catch (error) {
     clearAuthCookies(res);
-    res.status(500).json({ message: 'Failed to refresh authentication session.', error: error.message });
+    res.status(500).json({ message: 'Failed to refresh authentication session.' });
   }
 });
 
-// POST /api/auth/logout - Clear cookies and invalidate refresh token
+// POST /api/auth/logout - Clear cookies and revoke current refresh token
 router.post('/logout', async (req, res) => {
   try {
     const rawRefreshToken = getRefreshTokenFromReq(req);
 
     if (rawRefreshToken) {
       const tokenHash = crypto.createHash('sha256').update(rawRefreshToken).digest('hex');
-      await pool.query('DELETE FROM refresh_tokens WHERE token_hash = ?', [tokenHash]);
+      await pool.query(
+        'UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = ? AND revoked_at IS NULL',
+        [tokenHash]
+      );
     }
 
     clearAuthCookies(res);
     res.json({ message: 'Logged out successfully.' });
   } catch (error) {
     clearAuthCookies(res);
-    res.status(500).json({ message: 'Server error during logout.', error: error.message });
+    res.status(500).json({ message: 'Server error during logout.' });
+  }
+});
+
+// POST /api/auth/logout-all - Revoke all active sessions for current user
+router.post('/logout-all', authenticateToken, async (req, res) => {
+  try {
+    await pool.query(
+      'UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL',
+      [req.user.id]
+    );
+    await pool.query('UPDATE users SET token_version = token_version + 1 WHERE id = ?', [req.user.id]);
+    clearAuthCookies(res);
+    res.json({ message: 'All active sessions have been logged out.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to log out all devices.' });
+  }
+});
+
+// POST /api/auth/change-password - Authenticated password change; revokes all tokens
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, 'Current password is required.'),
+  newPassword: z.string().min(8, 'New password must be at least 8 characters long.'),
+}).strict();
+
+router.post('/change-password', authenticateToken, validateBody(changePasswordSchema), async (req, res) => {
+  try {
+    const { currentPassword, newPassword } = req.body;
+    const passwordError = validatePassword(newPassword);
+    if (passwordError) {
+      return res.status(400).json({ message: passwordError });
+    }
+
+    const [users] = await pool.query('SELECT id, password FROM users WHERE id = ?', [req.user.id]);
+    if (users.length === 0) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, users[0].password);
+    if (!isMatch) {
+      return res.status(400).json({ message: 'Current password is incorrect.' });
+    }
+
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    const connection = await pool.getConnection();
+    try {
+      await connection.beginTransaction();
+      await connection.query(
+        'UPDATE users SET password = ?, token_version = token_version + 1 WHERE id = ?',
+        [hashedPassword, req.user.id]
+      );
+      await connection.query(
+        'UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL',
+        [req.user.id]
+      );
+      await connection.commit();
+    } catch (txErr) {
+      await connection.rollback();
+      throw txErr;
+    } finally {
+      connection.release();
+    }
+
+    await notifyUser({
+      userId: req.user.id,
+      type: 'security',
+      title: 'Password Changed',
+      message: 'Your password was changed and all active sessions were revoked for security.',
+    });
+
+    clearAuthCookies(res);
+    res.json({ message: 'Password updated successfully. Please sign in again.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to change password.' });
+  }
+});
+
+// GET /api/auth/sessions - List own active sessions
+router.get('/sessions', authenticateToken, async (req, res) => {
+  try {
+    const rawRefreshToken = getRefreshTokenFromReq(req);
+    const currentHash = rawRefreshToken
+      ? crypto.createHash('sha256').update(rawRefreshToken).digest('hex')
+      : null;
+
+    const [sessions] = await pool.query(
+      `SELECT id, device_id, ip, user_agent, created_at, expires_at, token_hash
+       FROM refresh_tokens
+       WHERE user_id = ? AND revoked_at IS NULL AND expires_at > NOW()
+       ORDER BY created_at DESC`,
+      [req.user.id]
+    );
+
+    res.json({
+      sessions: sessions.map((s) => ({
+        id: s.id,
+        device_id: s.device_id,
+        ip: s.ip,
+        user_agent: s.user_agent,
+        created_at: s.created_at,
+        expires_at: s.expires_at,
+        is_current: Boolean(currentHash && s.token_hash === currentHash),
+      })),
+    });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to load active sessions.' });
+  }
+});
+
+// DELETE /api/auth/sessions/:id - Revoke own session
+router.delete('/sessions/:id', authenticateToken, async (req, res) => {
+  try {
+    const sessionId = parseInt(req.params.id, 10);
+    if (isNaN(sessionId)) {
+      return res.status(400).json({ message: 'Invalid session ID.' });
+    }
+
+    const [result] = await pool.query(
+      'UPDATE refresh_tokens SET revoked_at = NOW() WHERE id = ? AND user_id = ? AND revoked_at IS NULL',
+      [sessionId, req.user.id]
+    );
+
+    if (result.affectedRows === 0) {
+      return res.status(404).json({ message: 'Active session not found.' });
+    }
+
+    res.json({ message: 'Session revoked successfully.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to revoke session.' });
+  }
+});
+
+// POST /api/auth/users/:userId/force-logout - Admin only: force logout any user
+router.post('/users/:userId/force-logout', authenticateToken, requireAdmin, async (req, res) => {
+  try {
+    const targetUserId = parseInt(req.params.userId, 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ message: 'Invalid user ID.' });
+    }
+
+    const [users] = await pool.query('SELECT id FROM users WHERE id = ?', [targetUserId]);
+    if (users.length === 0) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    await pool.query(
+      'UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL',
+      [targetUserId]
+    );
+    await pool.query('UPDATE users SET token_version = token_version + 1 WHERE id = ?', [targetUserId]);
+
+    res.json({ message: 'User has been forcefully logged out from all devices.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to force logout user.' });
+  }
+});
+
+// PATCH /api/auth/users/:userId/status - Admin only: enable/disable account (revokes all tokens on disable)
+const userStatusSchema = z.object({
+  is_active: z.boolean(),
+}).strict();
+
+router.patch('/users/:userId/status', authenticateToken, requireAdmin, validateBody(userStatusSchema), async (req, res) => {
+  try {
+    const targetUserId = parseInt(req.params.userId, 10);
+    if (isNaN(targetUserId)) {
+      return res.status(400).json({ message: 'Invalid user ID.' });
+    }
+
+    const { is_active } = req.body;
+    const [users] = await pool.query('SELECT id FROM users WHERE id = ?', [targetUserId]);
+    if (users.length === 0) {
+      return res.status(404).json({ message: 'User not found.' });
+    }
+
+    if (!is_active) {
+      await pool.query(
+        'UPDATE users SET is_active = FALSE, disabled_at = NOW(), token_version = token_version + 1 WHERE id = ?',
+        [targetUserId]
+      );
+      await pool.query(
+        'UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = ? AND revoked_at IS NULL',
+        [targetUserId]
+      );
+    } else {
+      await pool.query(
+        'UPDATE users SET is_active = TRUE, disabled_at = NULL WHERE id = ?',
+        [targetUserId]
+      );
+    }
+
+    res.json({ message: is_active ? 'Account enabled.' : 'Account disabled and all sessions revoked.' });
+  } catch (error) {
+    res.status(500).json({ message: 'Failed to update account status.' });
   }
 });
 

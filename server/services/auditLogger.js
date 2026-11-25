@@ -1,4 +1,5 @@
 const pool = require('../db');
+const { getRequestMeta } = require('./securityService');
 
 /**
  * Records an immutable audit log entry in the database.
@@ -32,7 +33,12 @@ async function logAudit({
     const effectiveUserId = userId || req?.user?.id || null;
     const effectiveUserName = userName || req?.user?.name || 'System';
     const effectiveUserEmail = userEmail || req?.user?.email || 'system@ems.internal';
-    const effectiveIp = ipAddress || req?.ip || req?.headers?.['x-forwarded-for'] || null;
+    const meta = req ? getRequestMeta(req) : { ip: null, userAgent: null, deviceId: null };
+    const effectiveIp = ipAddress || meta.ip || null;
+    const contextSuffix = req && (meta.deviceId || meta.userAgent)
+      ? ` [device:${meta.deviceId || 'none'} ua:${(meta.userAgent || '').slice(0, 80)}]`
+      : '';
+    const effectiveDetails = details ? `${details}${contextSuffix}` : (contextSuffix ? contextSuffix.trim() : null);
 
     const query = `
       INSERT INTO audit_logs (
@@ -57,7 +63,7 @@ async function logAudit({
       entityType,
       entityId,
       employeeName || 'Unknown Employee',
-      details,
+      effectiveDetails,
       effectiveIp
     ]);
   } catch (error) {

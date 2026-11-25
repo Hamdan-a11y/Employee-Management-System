@@ -1,5 +1,6 @@
 const pool = require('../db');
 const { getPermissionsForRole } = require('../config/permissions');
+const { logSecurityEvent } = require('../services/securityService');
 
 /**
  * Middleware factory to enforce one or more required permissions.
@@ -19,6 +20,11 @@ function requirePermission(...requiredPermissions) {
     const hasAll = requiredPermissions.every((perm) => userPermissions.includes(perm));
 
     if (!hasAll) {
+      logSecurityEvent({
+        type: 'permission_denied',
+        req,
+        details: `Missing permission(s) [${requiredPermissions.join(', ')}] on ${req.method} ${req.originalUrl}`,
+      });
       return res.status(403).json({
         message: `Access denied. Requires permission(s): ${requiredPermissions.join(', ')}.`,
         userRole: req.user.role,
