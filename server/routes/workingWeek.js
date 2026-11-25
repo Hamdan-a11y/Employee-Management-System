@@ -9,6 +9,119 @@ const { formatDate } = require('../services/calendarService');
 
 router.use(authenticateToken);
 
+function formatWorkingWeekRow(r) {
+  return {
+    ...r,
+    monday: Boolean(r.monday),
+    tuesday: Boolean(r.tuesday),
+    wednesday: Boolean(r.wednesday),
+    thursday: Boolean(r.thursday),
+    friday: Boolean(r.friday),
+    saturday: Boolean(r.saturday),
+    sunday: Boolean(r.sunday),
+    effective_from: formatDate(r.effective_from),
+  };
+}
+
+// GET /api/working-week/current — Active working week config for a scope
+router.get('/current', async (req, res) => {
+  try {
+    const { scope = 'company', department_id, shift_id } = req.query;
+    const todayStr = formatDate(new Date());
+
+    let sql = `
+      SELECT ww.*, d.name AS department_name, s.name AS shift_name, u.name AS creator_name
+      FROM working_week_configs ww
+      LEFT JOIN departments d ON ww.department_id = d.id
+      LEFT JOIN shifts s ON ww.shift_id = s.id
+      LEFT JOIN users u ON ww.created_by = u.id
+      WHERE ww.scope = ? AND ww.effective_from <= ?
+    `;
+    const params = [scope, todayStr];
+
+    if (scope === 'department' && department_id) {
+      sql += ' AND ww.department_id = ?';
+      params.push(parseInt(department_id, 10));
+    } else if (scope === 'shift' && shift_id) {
+      sql += ' AND ww.shift_id = ?';
+      params.push(parseInt(shift_id, 10));
+    }
+
+    sql += ' ORDER BY ww.effective_from DESC, ww.id DESC LIMIT 1';
+    const [rows] = await pool.query(sql, params);
+
+    if (rows.length > 0) {
+      return res.json({ config: formatWorkingWeekRow(rows[0]) });
+    }
+
+    // Fallback to company default if department/shift override doesn't exist yet
+    if (scope !== 'company') {
+      const [companyRows] = await pool.query(
+        `SELECT ww.*, u.name AS creator_name
+         FROM working_week_configs ww
+         LEFT JOIN users u ON ww.created_by = u.id
+         WHERE ww.scope = 'company' AND ww.effective_from <= ?
+         ORDER BY ww.effective_from DESC, ww.id DESC LIMIT 1`,
+        [todayStr]
+      );
+      if (companyRows.length > 0) {
+        return res.json({ config: formatWorkingWeekRow(companyRows[0]), inherited: true });
+      }
+    }
+
+    return res.json({
+      config: {
+        scope: 'company',
+        monday: true,
+        tuesday: true,
+        wednesday: true,
+        thursday: true,
+        friday: true,
+        saturday: false,
+        sunday: false,
+        effective_from: todayStr,
+      },
+      isDefault: true,
+    });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to load current working week config.' });
+  }
+});
+
+// GET /api/working-week/history — History of working week configs for a scope
+router.get('/history', async (req, res) => {
+  try {
+    const { scope, department_id, shift_id } = req.query;
+    let sql = `
+      SELECT ww.*, d.name AS department_name, s.name AS shift_name, u.name AS creator_name
+      FROM working_week_configs ww
+      LEFT JOIN departments d ON ww.department_id = d.id
+      LEFT JOIN shifts s ON ww.shift_id = s.id
+      LEFT JOIN users u ON ww.created_by = u.id
+      WHERE 1=1
+    `;
+    const params = [];
+
+    if (scope) {
+      sql += ' AND ww.scope = ?';
+      params.push(scope);
+    }
+    if (scope === 'department' && department_id) {
+      sql += ' AND ww.department_id = ?';
+      params.push(parseInt(department_id, 10));
+    } else if (scope === 'shift' && shift_id) {
+      sql += ' AND ww.shift_id = ?';
+      params.push(parseInt(shift_id, 10));
+    }
+
+    sql += ' ORDER BY ww.effective_from DESC, ww.id DESC';
+    const [rows] = await pool.query(sql, params);
+    res.json({ history: rows.map(formatWorkingWeekRow) });
+  } catch (err) {
+    res.status(500).json({ message: 'Failed to load working week history.' });
+  }
+});
+
 // ==========================================
 // 1. GET /api/working-week — List Configs & History
 // ==========================================

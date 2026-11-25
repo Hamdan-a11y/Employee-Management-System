@@ -700,6 +700,134 @@ async function recalculateApprovedLeavesForHoliday(holiday, connection = null) {
   }
 }
 
+/**
+ * High-performance batch calculation of absent and working metrics for multiple employees in a month.
+ * Reduces 3N individual database queries to 4 bulk queries.
+ */
+async function getBatchAbsentDays(employeeIds, monthStr, connection = null) {
+  const executor = connection || pool;
+  if (!employeeIds || employeeIds.length === 0) return new Map();
+
+  const [yearStr, mStr] = monthStr.split('-');
+  const year = parseInt(yearStr, 10);
+  const month = parseInt(mStr, 10);
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const monthStartDate = `${yearStr}-${String(month).padStart(2, '0')}-01`;
+  const monthEndDate = `${yearStr}-${String(month).padStart(2, '0')}-${String(daysInMonth).padStart(2, '0')}`;
+
+  // 1. Bulk query employees
+  const [empRows] = await executor.query(
+    'SELECT id, name, department_id, created_at, joining_date, termination_date, deleted_at, status FROM employees WHERE id IN (?)',
+    [employeeIds]
+  );
+  const empMap = new Map();
+  for (const e of empRows) empMap.set(e.id, e);
+
+  // 2. Bulk query attendance
+  const [attRows] = await executor.query(
+    `SELECT employee_id, date, status, is_late, total_hours 
+     FROM attendance 
+     WHERE employee_id IN (?) AND date BETWEEN ? AND ?`,
+    [employeeIds, monthStartDate, monthEndDate]
+  );
+  const attMap = new Map();
+  for (const a of attRows) {
+    const k = `${a.employee_id}:${formatDate(a.date)}`;
+    attMap.set(k, a);
+  }
+
+  // 3. Bulk query leaves
+  const [leaveRows] = await executor.query(
+    `SELECT employee_id, start_date, end_date, is_half_day 
+     FROM leave_requests 
+     WHERE employee_id IN (?) AND status = 'APPROVED' AND (start_date <= ? AND end_date >= ?)`,
+    [employeeIds, monthEndDate, monthStartDate]
+  );
+  const leaveMap = new Map();
+  for (const lr of leaveRows) {
+    let cur = new Date(parseLocalDate(lr.start_date));
+    const end = parseLocalDate(lr.end_date);
+    while (cur.getTime() <= end.getTime()) {
+      const k = `${lr.employee_id}:${formatDate(cur)}`;
+      leaveMap.set(k, lr);
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+
+  // 4. Query holidays
+  const [holidays] = await executor.query(
+    `SELECT date, end_date, scope, department_id 
+     FROM holidays 
+     WHERE (? BETWEEN date AND COALESCE(end_date, date)) OR (date BETWEEN ? AND ?)`,
+    [monthStartDate, monthStartDate, monthEndDate]
+  );
+
+  const results = new Map();
+  for (const empId of employeeIds) {
+    const employee = empMap.get(empId);
+    if (!employee) {
+      results.set(empId, { scheduledWorkingDays: 0, absentDaysCount: 0, onLeaveDates: [], holidayWorkDates: [], weekendWorkDates: [] });
+      continue;
+    }
+
+    const joinDate = employee.joining_date ? formatDate(employee.joining_date) : formatDate(employee.created_at);
+    const termDate = employee.termination_date ? formatDate(employee.termination_date) : (employee.deleted_at ? formatDate(employee.deleted_at) : null);
+    const activeStartDate = joinDate && joinDate > monthStartDate ? joinDate : monthStartDate;
+    const activeEndDate = termDate && termDate < monthEndDate ? termDate : monthEndDate;
+
+    let scheduledWorkingDays = 0;
+    let absentDaysCount = 0;
+    const onLeaveDates = [];
+    const holidayWorkDates = [];
+    const weekendWorkDates = [];
+
+    const cur = new Date(parseLocalDate(activeStartDate));
+    const activeEnd = parseLocalDate(activeEndDate);
+
+    while (cur.getTime() <= activeEnd.getTime()) {
+      const dStr = formatDate(cur);
+      const dayOfWeek = cur.getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      const isHoliday = holidays.some(h => {
+        const inRange = dStr >= formatDate(h.date) && dStr <= formatDate(h.end_date || h.date);
+        return inRange && (h.scope === 'all' || (h.scope === 'department' && h.department_id === employee.department_id));
+      });
+
+      const att = attMap.get(`${empId}:${dStr}`);
+      const leave = leaveMap.get(`${empId}:${dStr}`);
+
+      if (isHoliday) {
+        if (att && att.status !== 'Absent') holidayWorkDates.push(dStr);
+      } else if (isWeekend) {
+        if (att && att.status !== 'Absent') weekendWorkDates.push(dStr);
+      } else {
+        scheduledWorkingDays += 1;
+        if (leave) {
+          onLeaveDates.push(dStr);
+          if (leave.is_half_day && (!att || att.status === 'Absent')) {
+            absentDaysCount += 0.5;
+          }
+        } else if (!att || att.status === 'Absent') {
+          absentDaysCount += 1;
+        } else if (att.status === 'Half Day') {
+          absentDaysCount += 0.5;
+        }
+      }
+      cur.setDate(cur.getDate() + 1);
+    }
+
+    results.set(empId, {
+      scheduledWorkingDays,
+      absentDaysCount,
+      onLeaveDates,
+      holidayWorkDates,
+      weekendWorkDates
+    });
+  }
+
+  return results;
+}
+
 module.exports = {
   formatDate,
   parseLocalDate,
@@ -711,5 +839,6 @@ module.exports = {
   getDayType,
   getWorkingDays,
   getAbsentDays,
+  getBatchAbsentDays,
   recalculateApprovedLeavesForHoliday
 };

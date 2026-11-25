@@ -14,6 +14,30 @@ const {
 } = require('../services/overtimeService');
 const { logAudit } = require('../services/auditLogger');
 const { generateCSV } = require('../utils/csvHelper');
+const { validateBody, z } = require('../middleware/validate');
+const { logSecurityEvent } = require('../services/securityService');
+
+const overtimePolicySchema = z.object({
+  department_id: z.coerce.number().int().positive().optional().nullable(),
+  threshold_minutes: z.coerce.number().int().min(0).optional(),
+  rounding_minutes: z.coerce.number().int().min(1).optional(),
+  regular_multiplier: z.coerce.number().min(1).optional(),
+  weekend_multiplier: z.coerce.number().min(1).optional(),
+  holiday_multiplier: z.coerce.number().min(1).optional(),
+  daily_cap_hours: z.coerce.number().min(0).optional(),
+  monthly_cap_hours: z.coerce.number().min(0).optional(),
+  approval_required: z.boolean().optional(),
+  effective_date: z.string().min(1, 'effective_date is required.'),
+}).strict();
+
+const overtimeApproveSchema = z.object({
+  approved_minutes: z.coerce.number().int().min(0).optional().nullable(),
+  reason: z.string().max(1000).optional().nullable(),
+}).strict();
+
+const overtimeRejectSchema = z.object({
+  comment: z.string().trim().min(1, 'A rejection comment is required.').max(1000),
+}).strict();
 
 // Protect all overtime endpoints with token authentication
 router.use(authenticateToken);
@@ -73,7 +97,7 @@ router.get('/policies/current', async (req, res) => {
  * POST /api/overtime/policies
  * Create a new versioned policy row. Old rows are NEVER edited.
  */
-router.post('/policies', async (req, res) => {
+router.post('/policies', validateBody(overtimePolicySchema), async (req, res) => {
   try {
     if (req.user.role !== 'admin' && req.user.role !== 'hr_manager') {
       return res.status(403).json({ message: 'Access denied: Only Admin and HR can configure overtime policies.' });
@@ -282,9 +306,19 @@ router.get('/requests/:id', async (req, res) => {
 
     // RBAC
     if (req.user.role === 'employee' && Number(req.user.employee_id) !== Number(request.employee_id)) {
+      logSecurityEvent({
+        type: 'permission_denied',
+        req,
+        details: `Employee #${req.user.employee_id} attempted to view overtime request #${id}`,
+      });
       return res.status(403).json({ message: 'Access denied.' });
     }
     if (req.user.role === 'department_manager' && Number(req.user.department_id) !== Number(request.department_id)) {
+      logSecurityEvent({
+        type: 'permission_denied',
+        req,
+        details: `Dept manager attempted to view overtime request #${id} outside department`,
+      });
       return res.status(403).json({ message: 'Access denied.' });
     }
 
@@ -302,7 +336,7 @@ router.get('/requests/:id', async (req, res) => {
  * PATCH /api/overtime/requests/:id/approve
  * Approves request. Supports optional fewer minutes + reason.
  */
-router.patch('/requests/:id/approve', async (req, res) => {
+router.patch('/requests/:id/approve', validateBody(overtimeApproveSchema), async (req, res) => {
   try {
     if (req.user.role === 'employee') {
       return res.status(403).json({ message: 'Employees cannot approve overtime.' });
@@ -333,7 +367,7 @@ router.patch('/requests/:id/approve', async (req, res) => {
  * PATCH /api/overtime/requests/:id/reject
  * Rejects request with a mandatory comment.
  */
-router.patch('/requests/:id/reject', async (req, res) => {
+router.patch('/requests/:id/reject', validateBody(overtimeRejectSchema), async (req, res) => {
   try {
     if (req.user.role === 'employee') {
       return res.status(403).json({ message: 'Employees cannot reject overtime.' });

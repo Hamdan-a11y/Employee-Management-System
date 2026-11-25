@@ -7,6 +7,21 @@ const { logAudit } = require('../services/auditLogger');
 const { notifyEmployeeUser, notifyDepartmentManager, notifyAdmins, emitDataChanged } = require('../services/notificationService');
 const { getWorkingDays, formatDate } = require('../services/calendarService');
 const { assertPeriodOpen } = require('../services/periodService');
+const { validateBody, z } = require('../middleware/validate');
+const { logSecurityEvent } = require('../services/securityService');
+
+const createLeaveSchema = z.object({
+  leave_type: z.enum(['Annual', 'Sick', 'Casual', 'Maternity', 'Paternity', 'Unpaid']),
+  start_date: z.string().min(1, 'Start date is required.'),
+  end_date: z.string().min(1, 'End date is required.'),
+  reason: z.string().trim().min(1, 'Reason is required.').max(1000),
+  is_half_day: z.boolean().optional().default(false),
+  half_day_type: z.enum(['FIRST_HALF', 'SECOND_HALF']).optional().nullable(),
+}).strict();
+
+const leaveReviewSchema = z.object({
+  review_note: z.string().max(1000).optional().nullable(),
+}).strict();
 
 // All leave endpoints require authentication
 router.use(authenticateToken);
@@ -363,7 +378,7 @@ router.post('/calculate-preview', async (req, res) => {
 // =========================================================================
 // 3. POST /api/leaves/requests — Submit a new leave request
 // =========================================================================
-router.post('/requests', async (req, res) => {
+router.post('/requests', validateBody(createLeaveSchema), async (req, res) => {
   try {
     const {
       leave_type,
@@ -372,10 +387,10 @@ router.post('/requests', async (req, res) => {
       reason,
       is_half_day = false,
       half_day_type = null,
-      employee_id: overrideEmpId
     } = req.body;
 
-    const employeeId = await resolveEmployeeId(req.user, overrideEmpId);
+    // Self-service identity strictly from authenticated token
+    const employeeId = await resolveEmployeeId(req.user);
     if (!employeeId) {
       return res.status(404).json({ message: 'No linked employee profile found to submit leave request.' });
     }
@@ -531,7 +546,7 @@ router.post('/requests', async (req, res) => {
 // =========================================================================
 // 4. PATCH /api/leaves/requests/:id/approve — Manager / Admin approval
 // =========================================================================
-router.patch('/requests/:id/approve', requirePermission('leave.manage'), async (req, res) => {
+router.patch('/requests/:id/approve', requirePermission('leave.manage'), validateBody(leaveReviewSchema), async (req, res) => {
   const conn = await pool.getConnection();
   try {
     const requestId = parseInt(req.params.id, 10);
@@ -695,7 +710,7 @@ router.patch('/requests/:id/approve', requirePermission('leave.manage'), async (
 // =========================================================================
 // 5. PATCH /api/leaves/requests/:id/reject — Manager / Admin rejection
 // =========================================================================
-router.patch('/requests/:id/reject', requirePermission('leave.manage'), async (req, res) => {
+router.patch('/requests/:id/reject', requirePermission('leave.manage'), validateBody(leaveReviewSchema), async (req, res) => {
   try {
     const requestId = parseInt(req.params.id, 10);
     if (isNaN(requestId)) {
@@ -818,6 +833,11 @@ router.delete('/requests/:id', async (req, res) => {
     if (req.user.role !== 'admin' && req.user.role !== 'hr_manager') {
       const userEmpId = await resolveEmployeeId(req.user);
       if (leaveReq.employee_id !== userEmpId) {
+        logSecurityEvent({
+          type: 'permission_denied',
+          req,
+          details: `Attempted to cancel leave request #${requestId} belonging to employee #${leaveReq.employee_id}`,
+        });
         return res.status(403).json({ message: 'You can only cancel your own leave requests.' });
       }
     }

@@ -6,6 +6,12 @@ const { requirePermission } = require('../middleware/rbac');
 const { logAudit } = require('../services/auditLogger');
 const { notifyEmployeeUser } = require('../services/notificationService');
 const { generatePayslipPDF } = require('../services/pdfGenerator');
+const { validateBody, z } = require('../middleware/validate');
+const { logSecurityEvent } = require('../services/securityService');
+
+const generatePayrollSchema = z.object({
+  month: z.string().regex(/^\d{4}-(0[1-9]|1[0-2])$/, 'Valid month in YYYY-MM format is required.'),
+}).strict();
 const {
   roundToTwo,
   formatDate,
@@ -487,7 +493,7 @@ router.get('/runs/:month', requirePermission('payroll.view'), async (req, res) =
  * Starts a payroll run for a chosen month in DRAFT status.
  * Enforces permissions, database transaction, unique constraint (prevent duplicate run).
  */
-router.post('/runs/generate', requirePermission('payroll.manage'), async (req, res) => {
+router.post('/runs/generate', requirePermission('payroll.manage'), validateBody(generatePayrollSchema), async (req, res) => {
   const conn = await pool.getConnection();
 
   try {
@@ -1147,6 +1153,11 @@ router.get('/payslips/:id', async (req, res) => {
       if (req.user.role === 'employee') {
         const empId = req.user.employee_id;
         if (!empId || empId !== payslip.employee_id) {
+          logSecurityEvent({
+            type: 'permission_denied',
+            req,
+            details: `Employee #${empId} attempted to access payslip #${payslipId} belonging to employee #${payslip.employee_id}`,
+          });
           return res.status(403).json({ message: 'Access denied: You cannot view another employee\'s payslip.' });
         }
         if (payslip.status === 'Draft') {

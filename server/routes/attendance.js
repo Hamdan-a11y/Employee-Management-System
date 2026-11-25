@@ -8,6 +8,27 @@ const { logAudit } = require('../services/auditLogger');
 const { notifyUser, notifyEmployeeUser, notifyDepartmentManager, notifyAdmins, emitDataChanged } = require('../services/notificationService');
 const { generateCSV } = require('../utils/csvHelper');
 const { attendanceLimiter } = require('../middleware/rateLimiter');
+const { validateBody, z } = require('../middleware/validate');
+const { logSecurityEvent } = require('../services/securityService');
+
+const checkInOutSchema = z.object({
+  latitude: z.coerce.number().optional().nullable(),
+  longitude: z.coerce.number().optional().nullable(),
+  accuracy: z.coerce.number().optional().nullable(),
+  notes: z.string().max(500).optional().nullable(),
+}).strict();
+
+const correctionRequestSchema = z.object({
+  date: z.string().min(1, 'Date is required.'),
+  requested_check_in: z.string().min(1, 'Requested check-in is required.'),
+  requested_check_out: z.string().min(1, 'Requested check-out is required.'),
+  reason: z.string().trim().min(1, 'Reason is required.').max(1000),
+}).strict();
+
+const correctionReviewSchema = z.object({
+  review_note: z.string().max(1000).optional().nullable(),
+  note: z.string().max(1000).optional().nullable(),
+}).strict();
 const {
   validateCoordinates,
   isLocationExempt,
@@ -21,9 +42,10 @@ const {
   calculateWorkingHoursAndShortDay,
   formatDate
 } = require('../services/shiftService');
-const { getAbsentDays } = require('../services/calendarService');
+const { getAbsentDays, getBatchAbsentDays } = require('../services/calendarService');
 const { calculateOvertime, recalculateOvertimeOnCorrection } = require('../services/overtimeService');
 const { assertPeriodOpen } = require('../services/periodService');
+const { invalidateDashboardCache } = require('../services/dashboardStatsService');
 
 // Protect all attendance routes with token authentication
 router.use(authenticateToken);
@@ -165,7 +187,7 @@ router.get('/today', async (req, res) => {
  * Enforces server-side Geolocation verification, Haversine office geofence calculation,
  * accuracy checks, exemption rules, and transaction safety.
  */
-router.post('/check-in', attendanceLimiter, async (req, res) => {
+router.post('/check-in', attendanceLimiter, validateBody(checkInOutSchema), async (req, res) => {
   let employeeId = req.user.employee_id;
   if (!employeeId) {
     const [matched] = await pool.query(
@@ -373,6 +395,9 @@ router.post('/check-in', attendanceLimiter, async (req, res) => {
       }).catch(() => {});
     }
 
+    // Invalidate dashboard stats cache on attendance write
+    invalidateDashboardCache().catch(() => {});
+
     // Emit attendance:updated to user, department manager and admins
     emitDataChanged(
       [`user:${req.user.id}`, employee.department_id ? `dept:${employee.department_id}` : null, 'admins'].filter(Boolean),
@@ -429,7 +454,7 @@ router.post('/check-in', attendanceLimiter, async (req, res) => {
  * checkout after midnight still belongs to the shift's start date.
  * Enforces location verification, geofence radius, and jump-velocity anomaly checks.
  */
-router.post('/check-out', attendanceLimiter, async (req, res) => {
+router.post('/check-out', attendanceLimiter, validateBody(checkInOutSchema), async (req, res) => {
   let employeeId = req.user.employee_id;
   if (!employeeId) {
     const [matched] = await pool.query(
@@ -643,6 +668,9 @@ router.post('/check-out', attendanceLimiter, async (req, res) => {
     const [updatedRows] = await pool.query('SELECT * FROM attendance WHERE id = ?', [record.id]);
     const updatedRecord = updatedRows[0];
 
+    // Invalidate dashboard stats cache on attendance write
+    invalidateDashboardCache().catch(() => {});
+
     // 6. Calculate Overtime & Create Request (auto-approved if approval_required = false)
     let overtimeResult = null;
     try {
@@ -789,6 +817,29 @@ router.get('/history', async (req, res) => {
       params.push(endDate.trim());
     }
 
+    // Keyset pagination parameters (cursor or after_date + after_id)
+    let cursorDate = null;
+    let cursorId = null;
+    if (req.query.cursor) {
+      try {
+        const decoded = JSON.parse(Buffer.from(req.query.cursor, 'base64').toString('utf8'));
+        cursorDate = decoded.date;
+        cursorId = decoded.id;
+      } catch (e) {}
+    } else if (req.query.after_date && req.query.after_id) {
+      cursorDate = req.query.after_date;
+      cursorId = parseInt(req.query.after_id, 10);
+    }
+
+    const isKeyset = Boolean(cursorDate && cursorId);
+    let keysetWhereClause = whereClause;
+    const dataParams = [...params];
+
+    if (isKeyset) {
+      keysetWhereClause += ' AND (a.date < ? OR (a.date = ? AND a.id < ?))';
+      dataParams.push(cursorDate, cursorDate, cursorId);
+    }
+
     // Allowed sort columns
     const SORT_MAP = {
       date: 'a.date',
@@ -800,69 +851,150 @@ router.get('/history', async (req, res) => {
     };
     const sortCol = SORT_MAP[sortBy] || 'a.date';
     const sortDir = String(sortOrder).toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
+    const orderClause = (!sortBy || sortBy === 'date')
+      ? (sortDir === 'ASC' ? 'ORDER BY a.date ASC, a.id ASC' : 'ORDER BY a.date DESC, a.id DESC')
+      : `ORDER BY ${sortCol} ${sortDir}, a.id DESC`;
 
-    // 1. Total matching count
-    const countSql = `
-      SELECT COUNT(*) AS total
-      FROM attendance a
-      JOIN employees e ON a.employee_id = e.id
-      LEFT JOIN departments d ON e.department_id = d.id
-      ${whereClause}
-    `;
-    const [countResult] = await pool.query(countSql, params);
-    const total = countResult[0]?.total || 0;
+    // 1. Total matching count (optimized: avoid massive cross-table scan when filters allow)
+    let total = 0;
+    if (isKeyset) {
+      total = 0;
+    } else if (whereClause === ' WHERE 1=1') {
+      const [fastCount] = await pool.query('SELECT COUNT(*) AS total FROM attendance');
+      total = fastCount[0]?.total || 0;
+    } else {
+      const needsJoin = whereClause.includes('e.') || whereClause.includes('d.');
+      const countSql = needsJoin
+        ? `SELECT COUNT(*) AS total FROM attendance a JOIN employees e ON a.employee_id = e.id LEFT JOIN departments d ON e.department_id = d.id ${whereClause}`
+        : `SELECT COUNT(*) AS total FROM attendance a ${whereClause}`;
+      const [countResult] = await pool.query(countSql, params);
+      total = countResult[0]?.total || 0;
+    }
     const totalPages = Math.max(1, Math.ceil(total / limitNum));
 
-    // 2. Fetch records
-    const dataSql = `
-      SELECT 
-        a.id,
-        a.employee_id,
-        e.name AS employee_name,
-        e.email AS employee_email,
-        d.name AS department_name,
-        a.shift_id,
-        s.name AS shift_name,
-        s.type AS shift_type,
-        a.is_short_day,
-        a.date,
-        a.check_in,
-        a.check_out,
-        a.total_hours,
-        a.is_late,
-        a.late_minutes,
-        a.status,
-        a.is_corrected,
-        a.notes,
-        a.created_at,
-        a.check_in_latitude,
-        a.check_in_longitude,
-        a.check_in_accuracy,
-        a.check_in_office_id,
-        o_in.name AS check_in_office_name,
-        a.check_in_distance,
-        a.check_in_location_status,
-        a.check_out_latitude,
-        a.check_out_longitude,
-        a.check_out_accuracy,
-        a.check_out_office_id,
-        o_out.name AS check_out_office_name,
-        a.check_out_distance,
-        a.check_out_location_status,
-        a.is_flagged_suspicious,
-        a.suspicious_reason
-      FROM attendance a
-      JOIN employees e ON a.employee_id = e.id
-      LEFT JOIN departments d ON e.department_id = d.id
-      LEFT JOIN shifts s ON a.shift_id = s.id
-      LEFT JOIN office_locations o_in ON a.check_in_office_id = o_in.id
-      LEFT JOIN office_locations o_out ON a.check_out_office_id = o_out.id
-      ${whereClause}
-      ORDER BY ${sortCol} ${sortDir}, a.check_in DESC
-      LIMIT ? OFFSET ?
-    `;
+    // 2. Fetch records (uses deferred join optimization for date-ordered pagination to avoid joining 1M+ rows)
+    const isUnfilteredDateSort = (!sortBy || sortBy === 'date') && !whereClause.includes('e.') && !whereClause.includes('d.');
 
-    const [records] = await pool.query(dataSql, [...params, limitNum, offset]);
+    let dataSql;
+    let queryArgs;
+
+    if (isUnfilteredDateSort) {
+      const pageWhere = isKeyset ? keysetWhereClause.replace(/\ba\./g, '') : whereClause.replace(/\ba\./g, '');
+      const pageLimitClause = isKeyset ? 'LIMIT ?' : 'LIMIT ? OFFSET ?';
+      const pageParams = isKeyset ? [...dataParams, limitNum] : [...dataParams, limitNum, offset];
+
+      dataSql = `
+        SELECT 
+          a.id,
+          a.employee_id,
+          e.name AS employee_name,
+          e.email AS employee_email,
+          d.name AS department_name,
+          a.shift_id,
+          s.name AS shift_name,
+          s.type AS shift_type,
+          a.is_short_day,
+          a.date,
+          a.check_in,
+          a.check_out,
+          a.total_hours,
+          a.is_late,
+          a.late_minutes,
+          a.status,
+          a.is_corrected,
+          a.notes,
+          a.created_at,
+          a.check_in_latitude,
+          a.check_in_longitude,
+          a.check_in_accuracy,
+          a.check_in_office_id,
+          o_in.name AS check_in_office_name,
+          a.check_in_distance,
+          a.check_in_location_status,
+          a.check_out_latitude,
+          a.check_out_longitude,
+          a.check_out_accuracy,
+          a.check_out_office_id,
+          o_out.name AS check_out_office_name,
+          a.check_out_distance,
+          a.check_out_location_status,
+          a.is_flagged_suspicious,
+          a.suspicious_reason
+        FROM (
+          SELECT id 
+          FROM attendance
+          ${pageWhere}
+          ORDER BY date DESC, id DESC
+          ${pageLimitClause}
+        ) p
+        JOIN attendance a ON p.id = a.id
+        JOIN employees e ON a.employee_id = e.id
+        LEFT JOIN departments d ON e.department_id = d.id
+        LEFT JOIN shifts s ON a.shift_id = s.id
+        LEFT JOIN office_locations o_in ON a.check_in_office_id = o_in.id
+        LEFT JOIN office_locations o_out ON a.check_out_office_id = o_out.id
+        ORDER BY a.date DESC, a.id DESC
+      `;
+      queryArgs = pageParams;
+    } else {
+      dataSql = `
+        SELECT 
+          a.id,
+          a.employee_id,
+          e.name AS employee_name,
+          e.email AS employee_email,
+          d.name AS department_name,
+          a.shift_id,
+          s.name AS shift_name,
+          s.type AS shift_type,
+          a.is_short_day,
+          a.date,
+          a.check_in,
+          a.check_out,
+          a.total_hours,
+          a.is_late,
+          a.late_minutes,
+          a.status,
+          a.is_corrected,
+          a.notes,
+          a.created_at,
+          a.check_in_latitude,
+          a.check_in_longitude,
+          a.check_in_accuracy,
+          a.check_in_office_id,
+          o_in.name AS check_in_office_name,
+          a.check_in_distance,
+          a.check_in_location_status,
+          a.check_out_latitude,
+          a.check_out_longitude,
+          a.check_out_accuracy,
+          a.check_out_office_id,
+          o_out.name AS check_out_office_name,
+          a.check_out_distance,
+          a.check_out_location_status,
+          a.is_flagged_suspicious,
+          a.suspicious_reason
+        FROM attendance a
+        JOIN employees e ON a.employee_id = e.id
+        LEFT JOIN departments d ON e.department_id = d.id
+        LEFT JOIN shifts s ON a.shift_id = s.id
+        LEFT JOIN office_locations o_in ON a.check_in_office_id = o_in.id
+        LEFT JOIN office_locations o_out ON a.check_out_office_id = o_out.id
+        ${isKeyset ? keysetWhereClause : whereClause}
+        ${orderClause}
+        LIMIT ? ${isKeyset ? '' : 'OFFSET ?'}
+      `;
+      queryArgs = isKeyset
+        ? [...dataParams, limitNum]
+        : [...dataParams, limitNum, offset];
+    }
+
+    const [records] = await pool.query(dataSql, queryArgs);
+
+    const lastRecord = records.length > 0 ? records[records.length - 1] : null;
+    const nextCursor = (lastRecord && records.length === limitNum)
+      ? Buffer.from(JSON.stringify({ date: formatDate(lastRecord.date), id: lastRecord.id })).toString('base64')
+      : null;
 
     res.json({
       records,
@@ -871,8 +1003,10 @@ router.get('/history', async (req, res) => {
         page: pageNum,
         limit: limitNum,
         totalPages,
-        hasNextPage: pageNum < totalPages,
-        hasPrevPage: pageNum > 1
+        hasNextPage: pageNum < totalPages || Boolean(nextCursor),
+        hasPrevPage: pageNum > 1 || Boolean(isKeyset),
+        next_cursor: nextCursor,
+        cursor: nextCursor
       }
     });
   } catch (error) {
@@ -938,30 +1072,30 @@ router.get('/report/monthly', async (req, res) => {
     const [rows] = await pool.query(baseQuery, params);
 
     const monthStr = `${year}-${String(month).padStart(2, '0')}`;
-    const enrichedRows = await Promise.all(
-      rows.map(async (r) => {
-        try {
-          const absData = await getAbsentDays(r.employee_id, monthStr);
-          return {
-            ...r,
-            days_scheduled_working: absData.scheduledWorkingDays,
-            days_absent: absData.absentDaysCount,
-            days_on_leave: absData.onLeaveDates.length,
-            days_holiday_work: absData.holidayWorkDates.length,
-            days_weekend_work: absData.weekendWorkDates.length
-          };
-        } catch (e) {
-          return {
-            ...r,
-            days_scheduled_working: Number(r.days_recorded || 0),
-            days_absent: 0,
-            days_on_leave: 0,
-            days_holiday_work: 0,
-            days_weekend_work: 0
-          };
-        }
-      })
-    );
+    const empIds = rows.map((r) => r.employee_id);
+    const batchData = await getBatchAbsentDays(empIds, monthStr);
+
+    const enrichedRows = rows.map((r) => {
+      const absData = batchData.get(r.employee_id);
+      if (absData) {
+        return {
+          ...r,
+          days_scheduled_working: absData.scheduledWorkingDays,
+          days_absent: absData.absentDaysCount,
+          days_on_leave: absData.onLeaveDates.length,
+          days_holiday_work: absData.holidayWorkDates.length,
+          days_weekend_work: absData.weekendWorkDates.length
+        };
+      }
+      return {
+        ...r,
+        days_scheduled_working: Number(r.days_recorded || 0),
+        days_absent: 0,
+        days_on_leave: 0,
+        days_holiday_work: 0,
+        days_weekend_work: 0
+      };
+    });
 
     // Calculate company-wide / team-wide metrics summary
     const summary = enrichedRows.reduce(
@@ -1178,7 +1312,7 @@ router.get('/report/export/excel', requirePermission('employee.export'), async (
  * POST /api/attendance/corrections
  * Employee submits an attendance correction request.
  */
-router.post('/corrections', async (req, res) => {
+router.post('/corrections', validateBody(correctionRequestSchema), async (req, res) => {
   try {
     const { date, requested_check_in, requested_check_out, reason } = req.body;
 
@@ -1361,7 +1495,7 @@ router.get('/corrections', async (req, res) => {
  * PATCH /api/attendance/corrections/:id/approve
  * Manager / Admin approves an attendance correction.
  */
-router.patch('/corrections/:id/approve', requirePermission('attendance.manage'), async (req, res) => {
+router.patch('/corrections/:id/approve', requirePermission('attendance.manage'), validateBody(correctionReviewSchema), async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -1520,7 +1654,7 @@ router.patch('/corrections/:id/approve', requirePermission('attendance.manage'),
  * PATCH /api/attendance/corrections/:id/reject
  * Manager / Admin rejects an attendance correction request with a reason.
  */
-router.patch('/corrections/:id/reject', requirePermission('attendance.manage'), async (req, res) => {
+router.patch('/corrections/:id/reject', requirePermission('attendance.manage'), validateBody(correctionReviewSchema), async (req, res) => {
   try {
     const { id } = req.params;
     const { rejection_reason } = req.body;

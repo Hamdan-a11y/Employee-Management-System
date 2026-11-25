@@ -13,20 +13,76 @@ const {
 router.use(authenticateToken);
 
 /**
+ * Helper to resolve target employee_id for user with permission and department-scope checks.
+ * Returns { employeeId, errorStatus, errorMessage }.
+ */
+async function resolveScopedEmployeeId(req, rawTargetId = null) {
+  const hasTarget = rawTargetId !== undefined && rawTargetId !== null && String(rawTargetId).trim() !== '';
+
+  let ownEmployeeId = req.user.employee_id || null;
+  if (!ownEmployeeId && req.user.email) {
+    const [matched] = await pool.query(
+      'SELECT id FROM employees WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL',
+      [req.user.email]
+    );
+    ownEmployeeId = matched.length > 0 ? matched[0].id : null;
+  }
+
+  const isPrivileged = req.user.role === 'admin' || req.user.role === 'hr_manager' || req.user.role === 'department_manager';
+
+  if (hasTarget) {
+    const parsedId = parseInt(rawTargetId, 10);
+    if (!Number.isInteger(parsedId) || parsedId <= 0) {
+      return { employeeId: null, errorStatus: 400, errorMessage: 'Invalid employeeId.' };
+    }
+
+    if (!isPrivileged) {
+      if (!ownEmployeeId || parsedId !== Number(ownEmployeeId)) {
+        return { employeeId: null, errorStatus: 403, errorMessage: 'Forbidden: Employees can only view their own attendance calendar.' };
+      }
+      return { employeeId: ownEmployeeId, errorStatus: null, errorMessage: null };
+    }
+
+    const [empRows] = await pool.query(
+      'SELECT id, department_id FROM employees WHERE id = ? AND deleted_at IS NULL',
+      [parsedId]
+    );
+    if (empRows.length === 0) {
+      return {
+        employeeId: null,
+        errorStatus: 404,
+        errorCode: 'EMPLOYEE_NOT_FOUND',
+        errorMessage: 'Employee not found.'
+      };
+    }
+
+    if (req.user.role === 'department_manager') {
+      if (!req.user.department_id || Number(empRows[0].department_id) !== Number(req.user.department_id)) {
+        return { employeeId: null, errorStatus: 403, errorMessage: 'Access denied: Employee is outside your department scope.' };
+      }
+    }
+
+    return { employeeId: empRows[0].id, errorStatus: null, errorMessage: null };
+  }
+
+  if (!ownEmployeeId) {
+    return {
+      employeeId: null,
+      errorStatus: 404,
+      errorCode: 'EMPLOYEE_NOT_FOUND',
+      errorMessage: 'Employee profile not found.'
+    };
+  }
+
+  return { employeeId: ownEmployeeId, errorStatus: null, errorMessage: null };
+}
+
+/**
  * Helper to resolve target employee_id for user
  */
 async function resolveEmployeeId(req, targetId = null) {
-  if (targetId && (req.user.role === 'admin' || req.user.role === 'hr_manager' || req.user.role === 'department_manager')) {
-    return parseInt(targetId, 10);
-  }
-  if (req.user.employee_id) {
-    return req.user.employee_id;
-  }
-  const [matched] = await pool.query(
-    'SELECT id FROM employees WHERE LOWER(email) = LOWER(?) AND deleted_at IS NULL',
-    [req.user.email]
-  );
-  return matched.length > 0 ? matched[0].id : null;
+  const { employeeId } = await resolveScopedEmployeeId(req, targetId);
+  return employeeId;
 }
 
 // ==========================================
@@ -83,14 +139,23 @@ router.get('/absent-days', async (req, res) => {
   }
 });
 
+function parseYearMonthQuery(query) {
+  const now = new Date();
+  if (query.month && /^\d{4}-\d{1,2}$/.test(String(query.month).trim())) {
+    const [yStr, mStr] = String(query.month).trim().split('-');
+    return { year: parseInt(yStr, 10), month: parseInt(mStr, 10) };
+  }
+  const year = parseInt(query.year, 10) || now.getFullYear();
+  const month = parseInt(query.month, 10) || (now.getMonth() + 1);
+  return { year, month };
+}
+
 // ==========================================
 // 4. GET /api/calendar/team-calendar
 // ==========================================
 router.get('/team-calendar', async (req, res) => {
   try {
-    const now = new Date();
-    const year = parseInt(req.query.year, 10) || now.getFullYear();
-    const month = parseInt(req.query.month, 10) || (now.getMonth() + 1);
+    const { year, month } = parseYearMonthQuery(req.query);
     const monthStr = `${year}-${String(month).padStart(2, '0')}`;
     let departmentId = req.query.department_id;
 
@@ -106,14 +171,72 @@ router.get('/team-calendar', async (req, res) => {
     const monthStartDate = `${monthStr}-01`;
     const monthEndDate = `${monthStr}-${String(daysInMonth).padStart(2, '0')}`;
 
-    // 1. Fetch Month Days & Company-wide / Base Day Types
+    // 1. Pre-fetch holidays & working_week_configs for the month (eliminates N+1 queries)
+    const [holidayRows] = await pool.query(
+      `SELECT id, name, date, end_date, scope, department_id
+       FROM holidays
+       WHERE date <= ? AND COALESCE(end_date, date) >= ?`,
+      [monthEndDate, monthStartDate]
+    );
+    const holidaysNormalized = holidayRows.map((h) => ({
+      ...h,
+      startStr: formatDate(h.date),
+      endStr: formatDate(h.end_date || h.date),
+    }));
+
+    const [wwConfigRows] = await pool.query(
+      `SELECT scope, department_id, shift_id, monday, tuesday, wednesday, thursday, friday, saturday, sunday, effective_from
+       FROM working_week_configs
+       WHERE effective_from <= ?
+       ORDER BY effective_from DESC, id DESC`,
+      [monthEndDate]
+    );
+    const wwConfigs = wwConfigRows.map((c) => ({
+      ...c,
+      effectiveStr: formatDate(c.effective_from),
+    }));
+
+    const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+    function resolveDayTypeInMemory(empDeptId, empShiftId, dateStr, dayOfWeek) {
+      const holiday = holidaysNormalized.find(
+        (h) =>
+          dateStr >= h.startStr &&
+          dateStr <= h.endStr &&
+          (h.scope === 'all' || (h.scope === 'department' && empDeptId && Number(h.department_id) === Number(empDeptId)))
+      );
+      if (holiday) {
+        return { dayType: 'holiday', holiday };
+      }
+
+      let cfg = null;
+      if (empShiftId) {
+        cfg = wwConfigs.find(
+          (c) => c.scope === 'shift' && Number(c.shift_id) === Number(empShiftId) && c.effectiveStr <= dateStr
+        );
+      }
+      if (!cfg && empDeptId) {
+        cfg = wwConfigs.find(
+          (c) => c.scope === 'department' && Number(c.department_id) === Number(empDeptId) && c.effectiveStr <= dateStr
+        );
+      }
+      if (!cfg) {
+        cfg = wwConfigs.find((c) => c.scope === 'company' && c.effectiveStr <= dateStr);
+      }
+
+      const dayKey = DAY_KEYS[dayOfWeek];
+      const isWorking = cfg ? Boolean(cfg[dayKey]) : (dayOfWeek !== 0 && dayOfWeek !== 6);
+      return { dayType: isWorking ? 'working' : 'weekend', holiday: null };
+    }
+
+    // Build Month Days & Base Day Types
     const days = [];
     for (let day = 1; day <= daysInMonth; day++) {
       const dStr = `${monthStr}-${String(day).padStart(2, '0')}`;
       const dObj = parseLocalDate(dStr);
       const dayOfWeek = dObj.getDay();
 
-      const dayInfo = await getDayType(null, dStr);
+      const dayInfo = resolveDayTypeInMemory(null, null, dStr, dayOfWeek);
       days.push({
         day,
         date: dStr,
@@ -183,79 +306,108 @@ router.get('/team-calendar', async (req, res) => {
       }
     }
 
-    // 5. Build Employee Daily Status Map
-    const formattedEmployees = await Promise.all(
-      employees.map(async (emp) => {
-        const schedule = [];
-        for (const day of days) {
-          const key = `${emp.id}_${day.date}`;
-          const att = attendanceMap.get(key);
-          const leave = leaveMap.get(key);
-          const empDayType = await getDayType(emp.id, day.date);
+    // 4.5 Fetch Shift Assignments for these employees in this month
+    const [shiftRows] = await pool.query(
+      `SELECT employee_id, shift_id, start_date, end_date
+       FROM employee_shift_assignments
+       WHERE employee_id IN (?)
+         AND start_date <= ?
+         AND (end_date IS NULL OR end_date >= ?)
+       ORDER BY start_date DESC`,
+      [empIds, monthEndDate, monthStartDate]
+    );
+    const shiftByEmp = new Map();
+    for (const s of shiftRows) {
+      if (!shiftByEmp.has(s.employee_id)) shiftByEmp.set(s.employee_id, []);
+      shiftByEmp.get(s.employee_id).push({
+        shift_id: s.shift_id,
+        startStr: formatDate(s.start_date),
+        endStr: s.end_date ? formatDate(s.end_date) : null,
+      });
+    }
 
-          let cellStatus = 'working';
-          let label = '';
-          let color = 'default';
+    const todayStr = formatDate(new Date());
 
-          if (empDayType.dayType === 'holiday') {
-            if (att && att.check_in && att.status !== 'Absent') {
-              cellStatus = 'holiday_work';
-              label = `Holiday Work (${att.total_hours}h)`;
-              color = 'purple';
-            } else {
-              cellStatus = 'holiday';
-              label = empDayType.holiday?.name || 'Holiday';
-              color = 'purple';
-            }
-          } else if (empDayType.dayType === 'weekend') {
-            if (att && att.check_in && att.status !== 'Absent') {
-              cellStatus = 'weekend_work';
-              label = `Weekend Work (${att.total_hours}h)`;
-              color = 'blue';
-            } else {
-              cellStatus = 'weekend';
-              label = 'Weekend';
-              color = 'gray';
-            }
-          } else if (leave) {
-            cellStatus = leave.is_half_day ? 'half_day_leave' : 'leave';
-            label = `${leave.leave_type} Leave${leave.is_half_day ? ' (0.5d)' : ''}`;
-            color = 'amber';
-          } else if (att && att.check_in && att.status !== 'Absent') {
-            if (att.is_late) {
-              cellStatus = 'late';
-              label = 'Late';
-              color = 'yellow';
-            } else {
-              cellStatus = 'present';
-              label = 'Present';
-              color = 'emerald';
-            }
+    // 5. Build Employee Daily Status Map (pure in-memory, 0 extra queries)
+    const formattedEmployees = employees.map((emp) => {
+      const empShifts = shiftByEmp.get(emp.id) || [];
+      const schedule = [];
+      for (const day of days) {
+        const key = `${emp.id}_${day.date}`;
+        const att = attendanceMap.get(key);
+        const leave = leaveMap.get(key);
+        const activeShift = empShifts.find(
+          (s) => s.startStr <= day.date && (!s.endStr || s.endStr >= day.date)
+        );
+        const empDayType = resolveDayTypeInMemory(
+          emp.department_id,
+          activeShift?.shift_id || null,
+          day.date,
+          day.dayOfWeek
+        );
+
+        let cellStatus = 'working';
+        let label = '';
+        let color = 'default';
+
+        if (empDayType.dayType === 'holiday') {
+          if (att && att.check_in && att.status !== 'Absent') {
+            cellStatus = 'holiday_work';
+            label = `Holiday Work (${att.total_hours}h)`;
+            color = 'purple';
           } else {
-            // Scheduled working day with no attendance
-            const isPast = day.date <= formatDate(new Date());
-            cellStatus = isPast ? 'absent' : 'scheduled';
-            label = isPast ? 'Absent' : 'Scheduled';
-            color = isPast ? 'rose' : 'default';
+            cellStatus = 'holiday';
+            label = empDayType.holiday?.name || 'Holiday';
+            color = 'purple';
           }
-
-          schedule.push({
-            date: day.date,
-            day: day.day,
-            status: cellStatus,
-            label,
-            color,
-            attendance: att || null,
-            leave: leave || null
-          });
+        } else if (empDayType.dayType === 'weekend') {
+          if (att && att.check_in && att.status !== 'Absent') {
+            cellStatus = 'weekend_work';
+            label = `Weekend Work (${att.total_hours}h)`;
+            color = 'blue';
+          } else {
+            cellStatus = 'weekend';
+            label = 'Weekend';
+            color = 'gray';
+          }
+        } else if (leave) {
+          cellStatus = leave.is_half_day ? 'half_day_leave' : 'leave';
+          label = `${leave.leave_type} Leave${leave.is_half_day ? ' (0.5d)' : ''}`;
+          color = 'amber';
+        } else if (att && att.check_in && att.status !== 'Absent') {
+          if (att.is_late) {
+            cellStatus = 'late';
+            label = 'Late';
+            color = 'yellow';
+          } else {
+            cellStatus = 'present';
+            label = 'Present';
+            color = 'emerald';
+          }
+        } else {
+          // Scheduled working day with no attendance
+          const isPast = day.date <= todayStr;
+          cellStatus = isPast ? 'absent' : 'scheduled';
+          label = isPast ? 'Absent' : 'Scheduled';
+          color = isPast ? 'rose' : 'default';
         }
 
-        return {
-          ...emp,
-          schedule
-        };
-      })
-    );
+        schedule.push({
+          date: day.date,
+          day: day.day,
+          status: cellStatus,
+          label,
+          color,
+          attendance: att || null,
+          leave: leave || null
+        });
+      }
+
+      return {
+        ...emp,
+        schedule
+      };
+    });
 
     res.json({
       month: monthStr,
@@ -274,14 +426,17 @@ router.get('/team-calendar', async (req, res) => {
 // ==========================================
 router.get('/employee-calendar', async (req, res) => {
   try {
-    const now = new Date();
-    const year = parseInt(req.query.year, 10) || now.getFullYear();
-    const month = parseInt(req.query.month, 10) || (now.getMonth() + 1);
+    const { year, month } = parseYearMonthQuery(req.query);
     const monthStr = `${year}-${String(month).padStart(2, '0')}`;
-    const employeeId = await resolveEmployeeId(req, req.query.employee_id);
+    const targetEmployeeParam = req.query.employeeId ?? req.query.employee_id;
+    const { employeeId, errorStatus, errorCode, errorMessage } = await resolveScopedEmployeeId(req, targetEmployeeParam);
 
     if (!employeeId) {
-      return res.status(404).json({ message: 'Employee profile not found.' });
+      const status = errorStatus || 404;
+      return res.status(status).json({
+        ...(status === 404 ? { code: errorCode || 'EMPLOYEE_NOT_FOUND' } : {}),
+        message: errorMessage || 'Employee profile not found.'
+      });
     }
 
     const daysInMonth = new Date(year, month, 0).getDate();
