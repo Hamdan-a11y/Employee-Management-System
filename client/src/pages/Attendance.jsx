@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import Sidebar from '../components/Sidebar';
+import MonthClosedBanner from '../components/MonthClosedBanner';
+import DateRangePicker from '../components/DateRangePicker';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import {
@@ -20,6 +22,8 @@ import {
   AlertTriangle,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
+  ArrowUpDown,
   User,
   PlusCircle,
   X,
@@ -35,11 +39,23 @@ import './Attendance.css';
 const Attendance = () => {
   const { user, isAdmin, isHR, isDeptManager, isEmployee, can } = useAuth();
   const canManageAttendance = isAdmin || isHR || isDeptManager || (typeof can === 'function' && can('attendance.manage'));
+  const canSelectCalendarEmployee = isAdmin || isHR || isDeptManager;
+  const hasLinkedEmployee = Boolean(user?.employee_id);
   const canExport = isAdmin || isHR || (typeof can === 'function' && can('employee.export'));
   const { success, error: notifyError, subscribeDataChange } = useNotification();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const activeTab = searchParams.get('tab') || 'logs';
+  const [isMonthClosed, setIsMonthClosed] = useState(false);
+  const [logSort, setLogSort] = useState({ field: 'date', dir: 'desc' });
+
+  const toggleLogSort = (field) => {
+    setLogSort((prev) =>
+      prev.field === field
+        ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { field, dir: 'desc' }
+    );
+  };
 
   // Live Clock State
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -122,6 +138,12 @@ const Attendance = () => {
   const [calMonth, setCalMonth] = useState(currentMonthNum);
   const [calData, setCalData] = useState(null);
   const [calLoading, setCalLoading] = useState(false);
+  const [calEmployees, setCalEmployees] = useState([]);
+  const [calEmployeesLoading, setCalEmployeesLoading] = useState(false);
+  const [calSelectedEmployeeId, setCalSelectedEmployeeId] = useState('');
+  const [calEmpDropdownOpen, setCalEmpDropdownOpen] = useState(false);
+  const [calEmpSearch, setCalEmpSearch] = useState('');
+  const calEmpPickerRef = useRef(null);
 
   // Update live clock every second
   useEffect(() => {
@@ -142,15 +164,17 @@ const Attendance = () => {
       .then((res) => setDepartments(res.data || []))
       .catch((err) => console.error('Failed to load departments', err));
 
-    api.get('/offices/exemptions/check-self')
-      .then((res) => {
-        setIsExempt(Boolean(res.data?.isExempt));
-        setExemptionDetails(res.data?.exemption || null);
-      })
-      .catch(() => {});
+    if (hasLinkedEmployee) {
+      api.get('/offices/exemptions/check-self')
+        .then((res) => {
+          setIsExempt(Boolean(res.data?.isExempt));
+          setExemptionDetails(res.data?.exemption || null);
+        })
+        .catch(() => {});
 
-    fetchTodayStatus();
-  }, []);
+      fetchTodayStatus();
+    }
+  }, [hasLinkedEmployee]);
 
   // Browser Geolocation Helper
   const obtainGeolocation = useCallback(() => {
@@ -359,21 +383,6 @@ const Attendance = () => {
     }
   }, [activeTab, fetchCorrections]);
 
-  // Real-time listener for attendance data-changed events
-  useEffect(() => {
-    if (!subscribeDataChange) return;
-    const unsubscribe = subscribeDataChange((eventData) => {
-      if (eventData.event === 'attendance:updated') {
-        fetchTodayStatus();
-        if (activeTab === 'logs') fetchLogs();
-        if (activeTab === 'corrections') fetchCorrections();
-        if (activeTab === 'monthly') fetchMonthlyReport();
-        if (activeTab === 'calendar') fetchEmployeeCalendar();
-      }
-    });
-    return unsubscribe;
-  }, [subscribeDataChange, activeTab, fetchLogs, fetchCorrections, fetchMonthlyReport, fetchEmployeeCalendar]);
-
   // Submit Correction Request
   const handleCorrectionSubmit = async (e) => {
     e.preventDefault();
@@ -498,25 +507,106 @@ const Attendance = () => {
   // ==========================================
   // FETCH ATTENDANCE CALENDAR
   // ==========================================
+  useEffect(() => {
+    if (activeTab !== 'calendar' || !canSelectCalendarEmployee || calEmployees.length > 0) return;
+
+    let cancelled = false;
+    setCalEmployeesLoading(true);
+    api.get('/employees')
+      .then((res) => {
+        if (cancelled) return;
+        const list = Array.isArray(res.data) ? res.data : (res.data?.employees || []);
+        setCalEmployees(list);
+        if (list.length > 0) {
+          setCalSelectedEmployeeId((prev) => {
+            if (prev) return prev;
+            const ownMatch = user?.employee_id && list.find((emp) => String(emp.id) === String(user.employee_id));
+            return ownMatch ? String(ownMatch.id) : String(list[0].id);
+          });
+        }
+      })
+      .catch((err) => {
+        if (!cancelled) {
+          console.error('Failed to load employees for calendar picker:', err);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setCalEmployeesLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTab, canSelectCalendarEmployee, calEmployees.length, user?.employee_id]);
+
+  useEffect(() => {
+    if (!calEmpDropdownOpen) return;
+    const handleOutside = (e) => {
+      if (calEmpPickerRef.current && !calEmpPickerRef.current.contains(e.target)) {
+        setCalEmpDropdownOpen(false);
+      }
+    };
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') setCalEmpDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    document.addEventListener('keydown', handleEsc);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      document.removeEventListener('keydown', handleEsc);
+    };
+  }, [calEmpDropdownOpen]);
+
   const fetchEmployeeCalendar = useCallback(async () => {
+    if (canSelectCalendarEmployee) {
+      if (!calSelectedEmployeeId) {
+        setCalData(null);
+        return;
+      }
+    } else if (!hasLinkedEmployee) {
+      setCalData(null);
+      return;
+    }
+
     try {
       setCalLoading(true);
-      const res = await api.get('/calendar/employee-calendar', {
-        params: { year: calYear, month: calMonth }
-      });
+      const params = { year: calYear, month: calMonth };
+      if (canSelectCalendarEmployee && calSelectedEmployeeId) {
+        params.employeeId = calSelectedEmployeeId;
+      }
+      const res = await api.get('/calendar/employee-calendar', { params });
       setCalData(res.data);
     } catch (err) {
+      if (err.response?.status === 404) {
+        setCalData(null);
+        return;
+      }
       notifyError(err.response?.data?.message || 'Failed to load employee attendance calendar.');
     } finally {
       setCalLoading(false);
     }
-  }, [calYear, calMonth, notifyError]);
+  }, [calYear, calMonth, canSelectCalendarEmployee, calSelectedEmployeeId, hasLinkedEmployee, notifyError]);
 
   useEffect(() => {
     if (activeTab === 'calendar') {
       fetchEmployeeCalendar();
     }
   }, [activeTab, fetchEmployeeCalendar]);
+
+  // Real-time listener for attendance data-changed events
+  useEffect(() => {
+    if (!subscribeDataChange) return;
+    const unsubscribe = subscribeDataChange((eventData) => {
+      if (eventData.event === 'attendance:updated') {
+        if (hasLinkedEmployee) fetchTodayStatus();
+        if (activeTab === 'logs') fetchLogs();
+        if (activeTab === 'corrections') fetchCorrections();
+        if (activeTab === 'monthly') fetchMonthlyReport();
+        if (activeTab === 'calendar') fetchEmployeeCalendar();
+      }
+    });
+    return unsubscribe;
+  }, [subscribeDataChange, activeTab, hasLinkedEmployee, fetchTodayStatus, fetchLogs, fetchCorrections, fetchMonthlyReport, fetchEmployeeCalendar]);
 
   const handlePrevCalMonth = () => {
     if (calMonth === 1) {
@@ -587,7 +677,13 @@ const Attendance = () => {
           </div>
         </div>
 
+        <MonthClosedBanner
+          month={activeTab === 'report' && reportMonth ? reportMonth : new Date().toISOString().slice(0, 7)}
+          onStatusChange={setIsMonthClosed}
+        />
+
         {/* Quick Punch Card for Logged In Employee */}
+        {hasLinkedEmployee && (
         <div className="card attendance-punch-card">
           <div className="punch-status-wrap">
             <div className="punch-indicator-col">
@@ -695,9 +791,9 @@ const Attendance = () => {
               <button
                 type="button"
                 onClick={handleCheckIn}
-                disabled={todayStatus.hasCheckedIn || punching}
+                disabled={isMonthClosed || todayStatus.hasCheckedIn || punching}
                 className="btn btn-primary punch-btn"
-                title={todayStatus.hasCheckedIn ? 'Already checked in for today' : 'Check in for today'}
+                title={isMonthClosed ? 'Month is closed' : todayStatus.hasCheckedIn ? 'Already checked in for today' : 'Check in for today'}
               >
                 <LogIn size={16} />
                 <span>{punching ? (locationLoading ? 'Locating...' : 'Recording...') : 'Check In'}</span>
@@ -706,7 +802,7 @@ const Attendance = () => {
               <button
                 type="button"
                 onClick={handleCheckOut}
-                disabled={!todayStatus.hasCheckedIn || todayStatus.hasCheckedOut || punching}
+                disabled={isMonthClosed || !todayStatus.hasCheckedIn || todayStatus.hasCheckedOut || punching}
                 className="btn btn-danger punch-btn"
                 title={
                   !todayStatus.hasCheckedIn 
@@ -722,6 +818,7 @@ const Attendance = () => {
             </div>
           </div>
         </div>
+        )}
 
         {/* Tab Navigation */}
         <div className="attendance-tabs-bar">
@@ -730,8 +827,8 @@ const Attendance = () => {
             onClick={() => handleTabChange('logs')}
             className={`attendance-tab-btn ${activeTab === 'logs' ? 'active' : ''}`}
           >
-            <Clock size={16} />
-            <span>Attendance Logs</span>
+            <Clock size={16} strokeWidth={1.75} aria-hidden="true" />
+            <span data-text="Attendance Logs">Attendance Logs</span>
           </button>
 
           <button
@@ -739,8 +836,8 @@ const Attendance = () => {
             onClick={() => handleTabChange('corrections')}
             className={`attendance-tab-btn ${activeTab === 'corrections' ? 'active' : ''}`}
           >
-            <FileText size={16} />
-            <span>Correction Requests</span>
+            <FileText size={16} strokeWidth={1.75} aria-hidden="true" />
+            <span data-text="Correction Requests">Correction Requests</span>
           </button>
 
           <button
@@ -748,8 +845,8 @@ const Attendance = () => {
             onClick={() => handleTabChange('report')}
             className={`attendance-tab-btn ${activeTab === 'report' ? 'active' : ''}`}
           >
-            <Calendar size={16} />
-            <span>Monthly Report</span>
+            <Calendar size={16} strokeWidth={1.75} aria-hidden="true" />
+            <span data-text="Monthly Report">Monthly Report</span>
           </button>
 
           <button
@@ -757,8 +854,8 @@ const Attendance = () => {
             onClick={() => handleTabChange('calendar')}
             className={`attendance-tab-btn ${activeTab === 'calendar' ? 'active' : ''}`}
           >
-            <CalendarDays size={16} />
-            <span>Attendance Calendar</span>
+            <CalendarDays size={16} strokeWidth={1.75} aria-hidden="true" />
+            <span data-text="Attendance Calendar">Attendance Calendar</span>
           </button>
         </div>
 
@@ -769,12 +866,13 @@ const Attendance = () => {
           <div className="attendance-tab-content">
             {/* Filter Bar */}
             <div className="card attendance-filter-card">
-              <div className="attendance-filters-row">
+              <div className={`attendance-filters-row ${!(isAdmin || isHR) ? 'no-dept' : ''}`}>
                 <div className="attendance-search-box">
-                  <Search size={16} className="attendance-search-icon" />
+                  <Search size={15} className="attendance-search-icon" aria-hidden="true" />
                   <input
                     type="text"
-                    placeholder="Search employee name or ID..."
+                    placeholder="Search employees"
+                    aria-label="Search employees"
                     value={logSearch}
                     onChange={(e) => {
                       setLogSearch(e.target.value);
@@ -787,6 +885,8 @@ const Attendance = () => {
                       type="button"
                       onClick={() => setLogSearch('')}
                       className="attendance-clear-btn"
+                      aria-label="Clear search"
+                      title="Clear search"
                     >
                       <X size={14} />
                     </button>
@@ -801,6 +901,7 @@ const Attendance = () => {
                       setLogPage(1);
                     }}
                     className="select attendance-select"
+                    aria-label="Filter by Department"
                   >
                     <option value="all">All Departments</option>
                     {departments.map((d) => (
@@ -816,6 +917,7 @@ const Attendance = () => {
                     setLogPage(1);
                   }}
                   className="select attendance-select"
+                  aria-label="Filter by Status"
                 >
                   <option value="all">All Statuses</option>
                   <option value="Present">Present</option>
@@ -824,30 +926,19 @@ const Attendance = () => {
                 </select>
 
                 <div className="attendance-date-range">
-                  <input
-                    type="date"
-                    value={logStartDate}
-                    onChange={(e) => {
-                      setLogStartDate(e.target.value);
+                  <DateRangePicker
+                    startDate={logStartDate}
+                    endDate={logEndDate}
+                    label="Date"
+                    onChange={({ startDate, endDate }) => {
+                      setLogStartDate(startDate);
+                      setLogEndDate(endDate);
                       setLogPage(1);
                     }}
-                    className="input attendance-date-input"
-                    title="From Date"
-                  />
-                  <span className="attendance-date-sep">to</span>
-                  <input
-                    type="date"
-                    value={logEndDate}
-                    onChange={(e) => {
-                      setLogEndDate(e.target.value);
-                      setLogPage(1);
-                    }}
-                    className="input attendance-date-input"
-                    title="To Date"
                   />
                 </div>
 
-                {(logSearch || logDept !== 'all' || logStatus !== 'all' || logStartDate || logEndDate) && (
+                {(logSearch || ((isAdmin || isHR) && logDept !== 'all') || logStatus !== 'all' || logStartDate || logEndDate) && (
                   <button
                     type="button"
                     onClick={() => {
@@ -858,10 +949,20 @@ const Attendance = () => {
                       setLogEndDate('');
                       setLogPage(1);
                     }}
-                    className="btn btn-secondary btn-sm"
+                    className="attendance-filter-reset-btn"
+                    title="Clear all active filters"
                   >
-                    <RotateCcw size={13} />
-                    <span>Reset</span>
+                    <RotateCcw size={13} aria-hidden="true" />
+                    <span>
+                      Clear filters (
+                      {[
+                        Boolean(logSearch),
+                        (isAdmin || isHR) && logDept !== 'all',
+                        logStatus !== 'all',
+                        Boolean(logStartDate || logEndDate),
+                      ].filter(Boolean).length}
+                      )
+                    </span>
                   </button>
                 )}
               </div>
@@ -869,19 +970,34 @@ const Attendance = () => {
 
             {/* Logs Table */}
             <div className="card attendance-table-card">
-              <div className="attendance-table-scroll">
-                <table className="attendance-table">
+              <div className="attendance-table-scroll logs-no-scroll">
+                <table className="attendance-table attendance-logs-table">
                   <thead>
                     <tr className="attendance-thead">
-                      <th className="attendance-th">Employee</th>
-                      <th className="attendance-th">Department</th>
-                      <th className="attendance-th">Date</th>
-                      <th className="attendance-th">Check In</th>
-                      <th className="attendance-th">Check Out</th>
-                      <th className="attendance-th">Hours</th>
-                      <th className="attendance-th">Location</th>
-                      <th className="attendance-th">Status</th>
-                      <th className="attendance-th">Correction</th>
+                      <th className="attendance-th logs-col-emp" title="Employee">Employee</th>
+                      <th className="attendance-th logs-col-dept" title="Department">Department</th>
+                      <th className="attendance-th logs-col-date" title="Date">
+                        <button type="button" className="attendance-sort-btn" onClick={() => toggleLogSort('date')}>
+                          <span>Date</span>
+                          <ArrowUpDown size={12} className={`attendance-sort-icon ${logSort.field === 'date' ? 'active' : ''}`} />
+                        </button>
+                      </th>
+                      <th className="attendance-th logs-col-in" title="Check In">Check In</th>
+                      <th className="attendance-th logs-col-out" title="Check Out">Check Out</th>
+                      <th className="attendance-th numeric logs-col-hours" title="Hours">
+                        <button type="button" className="attendance-sort-btn numeric" onClick={() => toggleLogSort('hours')}>
+                          <span>Hours</span>
+                          <ArrowUpDown size={12} className={`attendance-sort-icon ${logSort.field === 'hours' ? 'active' : ''}`} />
+                        </button>
+                      </th>
+                      <th className="attendance-th logs-col-loc" title="Location">Location</th>
+                      <th className="attendance-th logs-col-status" title="Status">
+                        <button type="button" className="attendance-sort-btn" onClick={() => toggleLogSort('status')}>
+                          <span>Status</span>
+                          <ArrowUpDown size={12} className={`attendance-sort-icon ${logSort.field === 'status' ? 'active' : ''}`} />
+                        </button>
+                      </th>
+                      <th className="attendance-th logs-col-corr" title="Correction">Correction</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -898,78 +1014,103 @@ const Attendance = () => {
                         </td>
                       </tr>
                     ) : (
-                      logs.map((record) => (
-                        <tr key={record.id} className="attendance-tr">
-                          <td className="attendance-td">
-                            <div className="attendance-emp-col">
-                              <span className="attendance-emp-name">{record.employee_name}</span>
-                              <span className="attendance-emp-id">ID #{record.employee_id}</span>
-                            </div>
-                          </td>
-                          <td className="attendance-td">
-                            {record.department_name || 'Unassigned'}
-                          </td>
-                          <td className="attendance-td font-medium">
-                            {formatDateStr(record.date)}
-                          </td>
-                          <td className="attendance-td">
-                            <div className="attendance-time-tag">
-                              <span>{formatTimeStr(record.check_in)}</span>
-                              {record.is_late ? (
-                                <span className="tag-late" title={`Late by ${record.late_minutes} minutes`}>
-                                  Late +{record.late_minutes}m
+                      [...logs].sort((a, b) => {
+                        const factor = logSort.dir === 'asc' ? 1 : -1;
+                        if (logSort.field === 'hours') {
+                          return ((Number(a.total_hours) || 0) - (Number(b.total_hours) || 0)) * factor;
+                        }
+                        if (logSort.field === 'status') {
+                          return String(a.status || '').localeCompare(String(b.status || '')) * factor;
+                        }
+                        return (new Date(a.date).getTime() - new Date(b.date).getTime()) * factor;
+                      }).map((record) => {
+                        const hoursVal = Number(record.total_hours || 0);
+                        const isAbsentZero = hoursVal === 0 && record.status === 'Absent';
+                        const statusSlug = record.is_missing_checkout
+                          ? 'missing-checkout'
+                          : (record.status || 'Present').toLowerCase().replace(/\s+/g, '-');
+                        const statusLabel = record.is_missing_checkout ? 'Missing Checkout' : record.status;
+
+                        return (
+                          <tr key={record.id} className="attendance-tr logs-row">
+                            <td className="attendance-td logs-col-emp" data-label="Employee">
+                              <div className="attendance-emp-col">
+                                <span className="attendance-emp-name" title={record.employee_name}>
+                                  {record.employee_name}
+                                </span>
+                                <span className="attendance-emp-id">#{record.employee_id}</span>
+                              </div>
+                            </td>
+                            <td className="attendance-td logs-col-dept" data-label="Department">
+                              <span className="attendance-dept-text" title={record.department_name || 'Unassigned'}>
+                                {record.department_name || 'Unassigned'}
+                              </span>
+                            </td>
+                            <td className="attendance-td logs-col-date" data-label="Date">
+                              {formatDateStr(record.date)}
+                            </td>
+                            <td className="attendance-td logs-col-in" data-label="Check In">
+                              {record.check_in ? (
+                                <div className="attendance-time-tag">
+                                  <span>{formatTimeStr(record.check_in)}</span>
+                                  {record.is_late ? (
+                                    <span className="tag-late" title={`Late by ${record.late_minutes} minutes`}>
+                                      +{record.late_minutes}m
+                                    </span>
+                                  ) : null}
+                                </div>
+                              ) : (
+                                <span className="attendance-empty-dash">—</span>
+                              )}
+                            </td>
+                            <td className="attendance-td logs-col-out" data-label="Check Out">
+                              {record.check_out ? (
+                                <span>{formatTimeStr(record.check_out)}</span>
+                              ) : (
+                                <span className="attendance-empty-dash">—</span>
+                              )}
+                            </td>
+                            <td className="attendance-td numeric logs-col-hours" data-label="Hours">
+                              {isAbsentZero ? (
+                                <span className="attendance-empty-dash">—</span>
+                              ) : (
+                                <span className="attendance-hours-plain">
+                                  {hoursVal.toFixed(2)}h
+                                </span>
+                              )}
+                            </td>
+                            <td className="attendance-td logs-col-loc" data-label="Location">
+                              {record.check_in_location_status === 'inside' ? (
+                                <span className="badge badge-office-tag" title={`Distance: ${Math.round(record.check_in_distance || 0)}m to ${record.check_in_office_name || 'Office'}`}>
+                                  <MapPin size={11} />
+                                  <span>{record.check_in_office_name || 'Office'}</span>
+                                </span>
+                              ) : record.check_in_location_status === 'exempt' ? (
+                                <span className="badge badge-exempt-tag" title="Location exempt (Remote/Field)">
+                                  <MapPin size={11} />
+                                  <span>Exempt</span>
+                                </span>
+                              ) : record.check_in_location_status === 'outside' ? (
+                                <span className="badge badge-late" title="Check-in outside office geofence">
+                                  <AlertTriangle size={11} />
+                                  <span>Outside</span>
                                 </span>
                               ) : null}
-                            </div>
-                          </td>
-                          <td className="attendance-td">
-                            {formatTimeStr(record.check_out)}
-                          </td>
-                          <td className="attendance-td">
-                            <span className="hours-chip">
-                              {Number(record.total_hours || 0).toFixed(2)}h
-                            </span>
-                          </td>
-                          <td className="attendance-td">
-                            {record.check_in_location_status === 'inside' ? (
-                              <span className="badge badge-office-tag" title={`Distance: ${Math.round(record.check_in_distance || 0)}m to ${record.check_in_office_name || 'Office'}`}>
-                                <MapPin size={11} />
-                                <span>{record.check_in_office_name || 'Office'} ({Math.round(record.check_in_distance || 0)}m)</span>
+                            </td>
+                            <td className="attendance-td logs-col-status" data-label="Status">
+                              <span className={`att-status-soft status-${statusSlug}`} title={statusLabel}>
+                                <span className="att-status-dot" aria-hidden="true" />
+                                <span className="att-status-text">{statusLabel}</span>
                               </span>
-                            ) : record.check_in_location_status === 'exempt' ? (
-                              <span className="badge badge-exempt-tag" title="Location exempt (Remote/Field)">
-                                <MapPin size={11} />
-                                <span>Exempt</span>
-                              </span>
-                            ) : record.check_in_location_status === 'outside' ? (
-                              <span className="badge badge-late" title="Check-in outside office geofence">
-                                <AlertTriangle size={11} />
-                                <span>Outside</span>
-                              </span>
-                            ) : (
-                              <span className="text-muted text-xs">—</span>
-                            )}
-                          </td>
-                          <td className="attendance-td">
-                            <span className={`badge ${
-                              record.status === 'Present' 
-                                ? 'badge-status-active' 
-                                : record.status === 'Late' 
-                                  ? 'badge-late' 
-                                  : 'badge-status-inactive'
-                            }`}>
-                              {record.status}
-                            </span>
-                          </td>
-                          <td className="attendance-td">
-                            {record.is_corrected ? (
-                              <span className="badge badge-corrected">Corrected</span>
-                            ) : (
-                              <span className="text-muted">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      ))
+                            </td>
+                            <td className="attendance-td logs-col-corr" data-label="Correction">
+                              {record.is_corrected ? (
+                                <span className="badge badge-corrected">Corrected</span>
+                              ) : null}
+                            </td>
+                          </tr>
+                        );
+                      })
                     )}
                   </tbody>
                 </table>
@@ -1404,9 +1545,103 @@ const Attendance = () => {
                     Today
                   </button>
                 </div>
+
+                {canSelectCalendarEmployee && (
+                  <div className="att-cal-emp-picker" ref={calEmpPickerRef}>
+                    {(() => {
+                      const selectedEmp = calEmployees.find((e) => String(e.id) === String(calSelectedEmployeeId));
+                      const searchTerm = calEmpSearch.trim().toLowerCase();
+                      const filteredEmps = calEmployees.filter((e) => {
+                        if (!searchTerm) return true;
+                        return (
+                          String(e.name || '').toLowerCase().includes(searchTerm) ||
+                          String(e.id || '').includes(searchTerm) ||
+                          String(e.department_name || '').toLowerCase().includes(searchTerm)
+                        );
+                      });
+
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            className={`att-cal-emp-trigger ${calEmpDropdownOpen ? 'open' : ''}`}
+                            onClick={() => setCalEmpDropdownOpen((prev) => !prev)}
+                            disabled={calEmployeesLoading}
+                            aria-expanded={calEmpDropdownOpen}
+                            aria-label="Select employee for attendance calendar"
+                          >
+                            <User size={15} className="att-cal-emp-icon" />
+                            <span className="att-cal-emp-label">
+                              {calEmployeesLoading
+                                ? 'Loading employees...'
+                                : selectedEmp
+                                  ? `${selectedEmp.name} (#${selectedEmp.id})`
+                                  : 'Select an employee'}
+                            </span>
+                            <ChevronDown size={14} className={`att-cal-emp-chevron ${calEmpDropdownOpen ? 'rotated' : ''}`} />
+                          </button>
+
+                          {calEmpDropdownOpen && (
+                            <div className="att-cal-emp-menu" role="listbox">
+                              <div className="att-cal-emp-search-wrap">
+                                <Search size={14} className="att-cal-emp-search-icon" />
+                                <input
+                                  type="text"
+                                  className="att-cal-emp-search-input"
+                                  placeholder="Search name, ID, or department..."
+                                  value={calEmpSearch}
+                                  onChange={(e) => setCalEmpSearch(e.target.value)}
+                                  autoFocus
+                                />
+                              </div>
+                              <div className="att-cal-emp-list">
+                                {filteredEmps.length === 0 ? (
+                                  <div className="att-cal-emp-empty">No matching employees</div>
+                                ) : (
+                                  filteredEmps.map((emp) => {
+                                    const isSelected = String(emp.id) === String(calSelectedEmployeeId);
+                                    return (
+                                      <button
+                                        key={emp.id}
+                                        type="button"
+                                        role="option"
+                                        aria-selected={isSelected}
+                                        className={`att-cal-emp-option ${isSelected ? 'selected' : ''}`}
+                                        onClick={() => {
+                                          setCalSelectedEmployeeId(String(emp.id));
+                                          setCalEmpDropdownOpen(false);
+                                          setCalEmpSearch('');
+                                        }}
+                                      >
+                                        <div className="att-cal-emp-opt-main">
+                                          <span className="att-cal-emp-opt-name">{emp.name}</span>
+                                          <span className="att-cal-emp-opt-meta">
+                                            #{emp.id}{emp.department_name ? ` · ${emp.department_name}` : ''}
+                                          </span>
+                                        </div>
+                                        {isSelected && <Check size={14} className="att-cal-emp-check" />}
+                                      </button>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
               </div>
             </div>
 
+            {canSelectCalendarEmployee && !calEmployeesLoading && !calSelectedEmployeeId ? (
+              <div className="card att-cal-empty-state">
+                <CalendarDays size={28} className="att-cal-empty-icon" />
+                <p>Select an employee to view their calendar</p>
+              </div>
+            ) : (
+            <>
             {/* Summary Metrics */}
             {calData?.summary && (
               <div className="att-cal-metrics-row">
@@ -1447,6 +1682,11 @@ const Attendance = () => {
 
               {calLoading ? (
                 <div className="att-cal-loading">Loading attendance calendar...</div>
+              ) : !calData?.days ? (
+                <div className="att-cal-empty-state">
+                  <CalendarDays size={28} className="att-cal-empty-icon" />
+                  <p>No attendance calendar found for this employee.</p>
+                </div>
               ) : (
                 <div className="att-cal-days-grid">
                   {/* Empty cells for offset */}
@@ -1496,6 +1736,8 @@ const Attendance = () => {
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
         )}
 

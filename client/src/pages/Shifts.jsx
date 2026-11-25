@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import Sidebar from '../components/Sidebar';
+import MonthClosedBanner from '../components/MonthClosedBanner';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import {
@@ -522,6 +523,7 @@ const Shifts = () => {
     <div className="app-container">
       <Sidebar />
       <main className="main-content shifts-main">
+        <MonthClosedBanner month={new Date().toISOString().slice(0, 7)} />
         {/* Header */}
         <div className="shifts-header">
           <div className="shifts-title-group">

@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useLocation, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import Sidebar from '../components/Sidebar';
+import MonthClosedBanner from '../components/MonthClosedBanner';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import {
@@ -134,19 +135,6 @@ const Overtime = () => {
       fetchApprovalRequests();
     }
   }, [activeTab, canManageOvertime, fetchApprovalRequests]);
-
-  // Real-time listener for overtime data-changed events
-  useEffect(() => {
-    if (!subscribeDataChange) return;
-    const unsubscribe = subscribeDataChange((eventData) => {
-      if (eventData.event === 'overtime:updated') {
-        if (canManageOvertime) fetchApprovalRequests();
-        if (fetchMyOvertime) fetchMyOvertime();
-        if (fetchMonthlyReport) fetchMonthlyReport();
-      }
-    });
-    return unsubscribe;
-  }, [subscribeDataChange, canManageOvertime, fetchApprovalRequests, fetchMyOvertime, fetchMonthlyReport]);
 
   // Filtered requests by search keyword
   const filteredApprovalRequests = useMemo(() => {
@@ -439,6 +427,19 @@ const Overtime = () => {
     }
   }, [activeTab, canManageOvertime, fetchMonthlyReport]);
 
+  // Real-time listener for overtime data-changed events
+  useEffect(() => {
+    if (!subscribeDataChange) return;
+    const unsubscribe = subscribeDataChange((eventData) => {
+      if (eventData.event === 'overtime:updated') {
+        if (canManageOvertime) fetchApprovalRequests();
+        fetchMyOvertime();
+        if (canManageOvertime) fetchMonthlyReport();
+      }
+    });
+    return unsubscribe;
+  }, [subscribeDataChange, canManageOvertime, fetchApprovalRequests, fetchMyOvertime, fetchMonthlyReport]);
+
   const handleExportCSV = () => {
     const params = new URLSearchParams({ month: reportMonth });
     if (reportDeptFilter !== 'all') {
@@ -493,6 +494,7 @@ const Overtime = () => {
     <div className="app-container">
       <Sidebar />
       <main className="main-content overtime-main">
+        <MonthClosedBanner month={new Date().toISOString().slice(0, 7)} />
         {/* Page Header */}
         <header className="overtime-header">
           <div className="overtime-title-group">

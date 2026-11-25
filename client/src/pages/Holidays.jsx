@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../services/api';
 import Sidebar from '../components/Sidebar';
+import MonthClosedBanner from '../components/MonthClosedBanner';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import {
@@ -272,6 +273,7 @@ const Holidays = () => {
         </div>
 
         {/* Toolbar & Filters */}
+        <MonthClosedBanner month={new Date().toISOString().slice(0, 7)} />
         <div className="card holidays-toolbar-card">
           <div className="holidays-toolbar">
             {/* Year Selector */}

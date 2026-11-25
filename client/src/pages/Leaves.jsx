@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../services/api';
 import Sidebar from '../components/Sidebar';
+import MonthClosedBanner from '../components/MonthClosedBanner';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import {
@@ -101,7 +102,10 @@ const Leaves = () => {
       const res = await api.get('/leaves/balances');
       setBalances(res.data);
     } catch (err) {
-      console.error('Failed to load leave balances', err);
+      if (err.response?.status !== 404) {
+        console.error('Failed to load leave balances', err);
+      }
+      setBalances(null);
     } finally {
       setBalancesLoading(false);
     }
@@ -365,6 +369,8 @@ const Leaves = () => {
             <span>Request Leave</span>
           </button>
         </div>
+
+        <MonthClosedBanner month={new Date().toISOString().slice(0, 7)} />
 
         {/* Leave Balance Overview Cards */}
         {balances && (

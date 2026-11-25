@@ -124,9 +124,23 @@ const MonthlyClosing = () => {
     }
   };
 
-  // CSV Export
-  const handleExportCSV = () => {
-    window.open(`/api/periods/${selectedMonth}/summary/export`, '_blank');
+  // CSV Export (authenticated via api client)
+  const handleExportCSV = async () => {
+    try {
+      const res = await api.get(`/periods/${selectedMonth}/summary/export`, {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([res.data], { type: 'text/csv' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `payroll_attendance_summary_${selectedMonth}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      notifyError('Failed to export payroll attendance summary CSV.');
+    }
   };
 
   const isClosed = periodStatus?.status === 'closed';
