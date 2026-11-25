@@ -387,6 +387,10 @@
   border-width: 0;
 }
 
+.sidebar-desktop-close {
+  display: none;
+}
+
 /* ==========================================================================
    Desktop Layout Enhancements (Screen width >= 769px)
    ========================================================================== */
@@ -403,14 +407,85 @@
     display: none;
   }
 
+  .sidebar-desktop-close {
+    width: 30px;
+    height: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: transparent;
+    border: none;
+    border-radius: 6px;
+    color: #64748b;
+    cursor: pointer;
+    transition: background-color 140ms ease, color 140ms ease;
+  }
+
+  .sidebar-desktop-close:hover {
+    background-color: #f1f5f9;
+    color: #0f172a;
+  }
+
   .sidebar-aside {
     position: sticky;
     top: 0;
     height: 100vh;
+    width: 260px;
     flex-shrink: 0;
     transform: none;
-    transition: none;
+    overflow: hidden;
+    transition: width 220ms cubic-bezier(0.22, 1, 0.36, 1);
     z-index: 30;
+    will-change: width;
+  }
+
+  .sidebar-aside.desktop-collapsed {
+    width: 60px;
+  }
+
+  .sidebar-aside.desktop-collapsed .sidebar-brand-header {
+    justify-content: center;
+    padding: 0 8px;
+    gap: 0;
+  }
+
+  .sidebar-aside.desktop-collapsed .sidebar-brand-link {
+    display: none;
+  }
+
+  .sidebar-aside.desktop-collapsed .sidebar-group-label,
+  .sidebar-aside.desktop-collapsed .sidebar-nav-label,
+  .sidebar-aside.desktop-collapsed .sidebar-user-details,
+  .sidebar-aside.desktop-collapsed .sidebar-logout-btn span {
+    opacity: 0;
+    width: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+
+  .sidebar-aside.desktop-collapsed .sidebar-nav-container {
+    padding: 12px 8px;
+  }
+
+  .sidebar-aside.desktop-collapsed .sidebar-nav-link {
+    justify-content: center;
+    padding: 9px 0;
+    gap: 0;
+  }
+
+  .sidebar-aside.desktop-collapsed .sidebar-footer {
+    padding: 10px 8px;
+  }
+
+  .sidebar-aside.desktop-collapsed .sidebar-user-card {
+    justify-content: center;
+    padding: 6px 0;
+  }
+
+  .sidebar-aside.desktop-collapsed .sidebar-logout-btn {
+    justify-content: center;
+    padding: 8px 0;
+    gap: 0;
   }
 }
 

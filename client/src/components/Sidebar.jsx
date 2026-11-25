@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { 
@@ -24,16 +24,40 @@ import {
   Timer,
   Cpu,
   BarChart3,
-  Lock
+  Lock,
+  ShieldAlert,
+  Laptop,
+  PanelLeftClose,
+  PanelLeftOpen
 } from 'lucide-react';
 import NotificationBell from './NotificationBell';
 import './Sidebar.css';
+
+// Preserve sidebar scroll position & desktop collapsed state across route transitions
+let savedSidebarScrollTop = 0;
+let savedDesktopCollapsed = false;
 
 const Sidebar = () => {
   const { user, logout, can, isAdmin: authIsAdmin, isEmployee: authIsEmployee } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
+  const [isDesktopCollapsed, setIsDesktopCollapsed] = useState(savedDesktopCollapsed);
+  const navContainerRef = useRef(null);
+
+  const toggleDesktopSidebar = () => {
+    setIsDesktopCollapsed((prev) => {
+      const next = !prev;
+      savedDesktopCollapsed = next;
+      return next;
+    });
+  };
+
+  useLayoutEffect(() => {
+    if (navContainerRef.current) {
+      navContainerRef.current.scrollTop = savedSidebarScrollTop;
+    }
+  }, [location.pathname]);
 
   const isAdmin = authIsAdmin !== undefined ? authIsAdmin : user?.role === 'admin';
   const isEmployee = authIsEmployee !== undefined ? authIsEmployee : user?.role === 'employee';
@@ -227,6 +251,20 @@ const Sidebar = () => {
     });
   }
 
+  if (isAdmin) {
+    navItems.push({
+      to: '/security-events',
+      label: 'Security Events',
+      icon: ShieldAlert,
+    });
+  }
+
+  navItems.push({
+    to: '/sessions',
+    label: 'Active Sessions',
+    icon: Laptop,
+  });
+
   return (
     <>
       {/* Mobile Top Header */}
@@ -277,7 +315,7 @@ const Sidebar = () => {
 
       {/* Main Sidebar Navigation */}
       <aside 
-        className={`sidebar-aside ${isMobileOpen ? 'mobile-open' : ''}`}
+        className={`sidebar-aside ${isMobileOpen ? 'mobile-open' : ''} ${isDesktopCollapsed ? 'desktop-collapsed' : ''}`}
         aria-label="Sidebar navigation"
       >
         {/* Brand Header */}
@@ -307,7 +345,16 @@ const Sidebar = () => {
           </NavLink>
 
           <div className="sidebar-brand-actions">
-            <NotificationBell />
+            {!isDesktopCollapsed && <NotificationBell />}
+            <button
+              type="button"
+              onClick={toggleDesktopSidebar}
+              className="sidebar-desktop-close"
+              aria-label={isDesktopCollapsed ? 'Open sidebar' : 'Close sidebar'}
+              title={isDesktopCollapsed ? 'Open sidebar' : 'Close sidebar'}
+            >
+              {isDesktopCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={16} />}
+            </button>
             <button
               type="button"
               onClick={() => setIsMobileOpen(false)}
@@ -320,7 +367,13 @@ const Sidebar = () => {
         </div>
 
         {/* Navigation Modules */}
-        <div className="sidebar-nav-container">
+        <div
+          ref={navContainerRef}
+          className="sidebar-nav-container"
+          onScroll={(e) => {
+            savedSidebarScrollTop = e.currentTarget.scrollTop;
+          }}
+        >
           <div className="sidebar-group-label">Main Menu</div>
           
           <nav className="sidebar-nav">
@@ -330,6 +383,7 @@ const Sidebar = () => {
                 <NavLink
                   key={item.to}
                   to={item.to}
+                  title={isDesktopCollapsed ? item.label : undefined}
                   className={({ isActive }) =>
                     isActive ? 'sidebar-nav-link active' : 'sidebar-nav-link'
                   }

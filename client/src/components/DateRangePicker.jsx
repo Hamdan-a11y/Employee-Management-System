@@ -130,7 +130,9 @@ export default function DateRangePicker({
   label = 'Joined Date:'
 }) {
   const [isOpen, setIsOpen] = useState(false);
+  const [popoverAlign, setPopoverAlign] = useState({ alignRight: false, shiftX: 0 });
   const containerRef = useRef(null);
+  const popoverRef = useRef(null);
 
   // Parsed initial dates
   const parsedStart = useMemo(() => parseISODate(startDate), [startDate]);
@@ -186,6 +188,42 @@ export default function DateRangePicker({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, parsedStart, parsedEnd]);
+
+  // Keep popover inside viewport on desktop/tablet
+  useEffect(() => {
+    if (!isOpen) {
+      setPopoverAlign({ alignRight: false, shiftX: 0 });
+      return;
+    }
+
+    const updatePosition = () => {
+      if (!containerRef.current || !popoverRef.current || window.innerWidth <= 768) {
+        setPopoverAlign({ alignRight: false, shiftX: 0 });
+        return;
+      }
+
+      const triggerRect = containerRef.current.getBoundingClientRect();
+      const popoverWidth = popoverRef.current.offsetWidth;
+      const margin = 8;
+      const overflowsRight = triggerRect.left + popoverWidth > window.innerWidth - margin;
+
+      if (!overflowsRight) {
+        setPopoverAlign({ alignRight: false, shiftX: 0 });
+      } else if (triggerRect.right - popoverWidth >= margin) {
+        setPopoverAlign({ alignRight: true, shiftX: 0 });
+      } else {
+        const clampedLeft = Math.max(margin, window.innerWidth - margin - popoverWidth);
+        setPopoverAlign({ alignRight: false, shiftX: clampedLeft - triggerRect.left });
+      }
+    };
+
+    const rafId = requestAnimationFrame(updatePosition);
+    window.addEventListener('resize', updatePosition);
+    return () => {
+      cancelAnimationFrame(rafId);
+      window.removeEventListener('resize', updatePosition);
+    };
+  }, [isOpen]);
 
   // Months to display in dual view
   const leftYear = viewDate.getFullYear();
@@ -400,7 +438,13 @@ export default function DateRangePicker({
 
       {/* Floating Popover Calendar Card */}
       {isOpen && (
-        <div className="premium-datepicker-popover" role="dialog" aria-modal="true">
+        <div
+          ref={popoverRef}
+          className={`premium-datepicker-popover ${popoverAlign.alignRight ? 'align-right' : ''}`}
+          style={popoverAlign.shiftX ? { left: `${popoverAlign.shiftX}px` } : undefined}
+          role="dialog"
+          aria-modal="true"
+        >
           {/* Inner Double-Bezel Card */}
           <div className="premium-popover-card">
             
@@ -459,7 +503,25 @@ export default function DateRangePicker({
                       {leftMonthTitle}
                     </div>
 
-                    <div className="premium-nav-spacer" />
+                    <div className="premium-nav-spacer hide-on-mobile" />
+                    <button
+                      type="button"
+                      onClick={handleNextMonth}
+                      className="premium-nav-btn show-on-mobile"
+                      title="Next month"
+                      aria-label="Next month"
+                    >
+                      <ChevronRight size={15} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleNextYear}
+                      className="premium-nav-btn show-on-mobile"
+                      title="Next year"
+                      aria-label="Next year"
+                    >
+                      <span className="premium-year-arrow">»</span>
+                    </button>
                   </div>
 
                   {/* Weekday Row */}

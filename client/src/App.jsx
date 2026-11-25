@@ -31,6 +31,8 @@ import JobRuns from './pages/JobRuns';
 import Notifications from './pages/Notifications';
 import Analytics from './pages/Analytics';
 import MonthlyClosing from './pages/MonthlyClosing';
+import SecurityEvents from './pages/SecurityEvents';
+import ActiveSessions from './pages/ActiveSessions';
 
 function App() {
   return (
@@ -285,6 +287,22 @@ function App() {
             element={
               <ProtectedRoute>
                 <MonthlyClosing />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/sessions"
+            element={
+              <ProtectedRoute>
+                <ActiveSessions />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/security-events"
+            element={
+              <ProtectedRoute allowedRoles={['admin']}>
+                <SecurityEvents />
               </ProtectedRoute>
             }
           />

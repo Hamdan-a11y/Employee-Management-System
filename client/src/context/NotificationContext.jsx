@@ -1,12 +1,12 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
-import api from '../services/api';
+import api, { getAccessToken } from '../services/api';
 import { useAuth } from './AuthContext';
 import { connectSocket, disconnectSocket, getSocket } from '../services/socket';
 
 const NotificationContext = createContext(null);
 
 export const NotificationProvider = ({ children }) => {
-  const { isAuthenticated, token } = useAuth();
+  const { isAuthenticated } = useAuth();
 
   // --- Toasts (Ephemeral in-app feedback) ---
   const [toasts, setToasts] = useState([]);
@@ -117,9 +117,7 @@ export const NotificationProvider = ({ children }) => {
       return;
     }
 
-    const authToken = token || localStorage.getItem('token');
-    if (!authToken) return;
-
+    const authToken = getAccessToken();
     fetchNotifications();
 
     const socket = connectSocket(authToken);
@@ -184,7 +182,7 @@ export const NotificationProvider = ({ children }) => {
       socket.off('leave:updated');
       socket.off('overtime:updated');
     };
-  }, [isAuthenticated, token, fetchNotifications, showToast]);
+  }, [isAuthenticated, fetchNotifications, showToast]);
 
   // Fallback Polling: if socket disconnected, poll unread count every 60s
   useEffect(() => {

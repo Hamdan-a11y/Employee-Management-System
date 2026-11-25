@@ -8,12 +8,10 @@ export const getSocket = () => socketInstance;
  * Connects or returns existing singleton Socket.IO connection.
  * Authenticates with access token and automatically handles reconnection.
  */
-export const connectSocket = (token) => {
-  if (!token) return null;
-
+export const connectSocket = (token = null) => {
   if (socketInstance) {
     if (!socketInstance.connected) {
-      socketInstance.auth = { token };
+      socketInstance.auth = token ? { token } : {};
       socketInstance.connect();
     }
     return socketInstance;
@@ -29,7 +27,8 @@ export const connectSocket = (token) => {
   }
 
   socketInstance = io(socketUrl, {
-    auth: { token },
+    auth: token ? { token } : {},
+    withCredentials: true,
     transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: Infinity,

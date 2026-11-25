@@ -232,7 +232,7 @@ body {
 
 .badge-status-inactive {
   background-color: transparent !important;
-  color: #64748b !important;
+  color: #dc2626 !important;
   font-size: 0.8125rem;
   font-weight: 500;
   display: inline-flex;
@@ -249,7 +249,7 @@ body {
   width: 6.5px;
   height: 6.5px;
   border-radius: 50%;
-  background-color: #94a3b8;
+  background-color: #dc2626;
   flex-shrink: 0;
 }
 

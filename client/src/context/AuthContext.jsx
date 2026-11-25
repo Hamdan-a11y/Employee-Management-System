@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import api from '../services/api';
+import api, { setAccessToken } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -29,7 +29,10 @@ export const AuthProvider = ({ children }) => {
     checkAuth();
   }, []);
 
-  const login = (userData) => {
+  const login = (userData, accessToken = null) => {
+    if (accessToken) {
+      setAccessToken(accessToken);
+    }
     setUser(userData);
   };
 
@@ -39,6 +42,7 @@ export const AuthProvider = ({ children }) => {
     } catch (error) {
       console.error('Logout error:', error);
     } finally {
+      setAccessToken(null);
       setUser(null);
     }
   };
