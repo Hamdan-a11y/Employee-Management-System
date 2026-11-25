@@ -118,6 +118,11 @@
   color: #64748b;
 }
 
+.dashboard-stat-icon.danger {
+  background-color: transparent !important;
+  color: #dc2626;
+}
+
 .dashboard-stat-label {
   font-size: 0.8rem;
   font-weight: 600;
@@ -346,11 +351,11 @@
 }
 
 .inactive-segment {
-  stroke: #cbd5e1;
+  stroke: #ef4444;
 }
 
 .inactive-segment:hover {
-  stroke: #94a3b8;
+  stroke: #dc2626;
   stroke-width: 15px;
 }
 
@@ -417,7 +422,7 @@
 }
 
 .inactive-dot {
-  background-color: #94a3b8;
+  background-color: #dc2626;
 }
 
 .legend-name {
@@ -454,6 +459,13 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
   gap: var(--space-6);
+  align-items: stretch;
+}
+
+.dashboard-sections-grid > .card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
 }
 
 .dashboard-link-view-all {
@@ -475,6 +487,33 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  flex: 1;
+}
+
+.dashboard-dept-chart-list.expanded {
+  max-height: 390px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.dashboard-dept-toggle-btn {
+  margin-top: var(--space-3);
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-color);
+  background-color: var(--bg-page);
+  color: var(--text-secondary);
+  font-size: 0.8125rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease;
+}
+
+.dashboard-dept-toggle-btn:hover {
+  background-color: var(--bg-subtle);
+  color: var(--text-primary);
+  border-color: var(--border-hover);
 }
 
 .dashboard-dept-chart-item {
@@ -554,6 +593,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
+  flex: 1;
 }
 
 .dashboard-recent-item {

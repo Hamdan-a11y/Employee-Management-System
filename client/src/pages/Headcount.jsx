@@ -5,7 +5,7 @@ import Sidebar from '../components/Sidebar';
 import { useAuth } from '../context/AuthContext';
 import { useNotification } from '../context/NotificationContext';
 import { DepartmentIcon } from '../utils/departmentIcons';
-import { calculateHeadcountStatus, calculateAttrition, calculateOvertime, calculateLeavePressure } from '../utils/headcount';
+import { calculateHeadcountStatus, calculateAttrition } from '../utils/headcount';
 import {
   Users,
   Search,
@@ -17,20 +17,28 @@ import {
   UserPlus,
   UserMinus,
   UserCheck,
-  CheckCircle2,
   AlertTriangle,
   HelpCircle,
   ArrowRight,
+  ArrowUpDown,
   ShieldCheck,
   RefreshCw,
   Building2,
   Calendar,
+  CalendarOff,
   Clock,
+  SlidersHorizontal,
+  Info,
+  Target,
+  Diff,
+  Activity,
+  Compass,
+  ShieldAlert,
 } from 'lucide-react';
 import './Headcount.css';
 
 const Headcount = () => {
-  const { user, isAdmin, isHR, isDeptManager, isEmployee } = useAuth();
+  const { isAdmin, isHR, isDeptManager, isEmployee } = useAuth();
   const { success, error: notifyError } = useNotification();
 
   const [departments, setDepartments] = useState([]);
@@ -39,20 +47,25 @@ const Headcount = () => {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
 
-  // Attrition state (period: 3, 6, 12 months)
-  const [attritionPeriod, setAttritionPeriod] = useState(12);
+  // Shared & advanced period selectors
+  const [sharedPeriod, setSharedPeriod] = useState(3);
+  const [showAdvancedPeriods, setShowAdvancedPeriods] = useState(false);
+  const [attritionPeriod, setAttritionPeriod] = useState(3);
+  const [overtimePeriod, setOvertimePeriod] = useState(3);
+  const [leavePeriod, setLeavePeriod] = useState(3);
+
   const [attritionData, setAttritionData] = useState({});
   const [attritionLoading, setAttritionLoading] = useState(false);
-
-  // Overtime state (period: 1, 3, 6 months)
-  const [overtimePeriod, setOvertimePeriod] = useState(3);
   const [overtimeData, setOvertimeData] = useState({});
   const [overtimeLoading, setOvertimeLoading] = useState(false);
-
-  // Leave Pressure state (period: 1, 3, 6 months)
-  const [leavePeriod, setLeavePeriod] = useState(3);
   const [leaveData, setLeaveData] = useState({});
   const [leaveLoading, setLeaveLoading] = useState(false);
+
+  // Sorting state: field ('name' | 'gap' | 'attention'), dir ('asc' | 'desc')
+  const [sortBy, setSortBy] = useState({ field: 'attention', dir: 'desc' });
+
+  // Side drawer state
+  const [selectedDeptId, setSelectedDeptId] = useState(null);
 
   // Inline edit state
   const [editingId, setEditingId] = useState(null);
@@ -60,10 +73,7 @@ const Headcount = () => {
   const [savingId, setSavingId] = useState(null);
   const [inlineError, setInlineError] = useState('');
 
-  // Can the current user edit approved headcount?
-  // Admin and HR Manager: view all and edit
-  // Department Manager: view own department only, no edit
-  // Employee: no access
+  // Admin and HR Manager: view all and edit; Dept Manager: view own dept; Employee: no access
   const canEdit = Boolean(isAdmin || isHR);
 
   const fetchHeadcount = async () => {
@@ -144,35 +154,44 @@ const Headcount = () => {
     ]);
   };
 
+  const handleSharedPeriodChange = (val) => {
+    const num = Number(val);
+    setSharedPeriod(num);
+    setAttritionPeriod(num);
+    setOvertimePeriod(num > 6 ? 6 : num);
+    setLeavePeriod(num > 6 ? 6 : num);
+  };
+
   useEffect(() => {
     document.title = 'Workforce Planning';
   }, []);
 
   useEffect(() => {
-    if (!isEmployee) {
-      fetchHeadcount();
-    }
+    if (!isEmployee) fetchHeadcount();
   }, [isEmployee]);
 
   useEffect(() => {
-    if (!isEmployee) {
-      fetchAttrition(attritionPeriod);
-    }
+    if (!isEmployee) fetchAttrition(attritionPeriod);
   }, [isEmployee, attritionPeriod]);
 
   useEffect(() => {
-    if (!isEmployee) {
-      fetchOvertime(overtimePeriod);
-    }
+    if (!isEmployee) fetchOvertime(overtimePeriod);
   }, [isEmployee, overtimePeriod]);
 
   useEffect(() => {
-    if (!isEmployee) {
-      fetchLeavePressure(leavePeriod);
-    }
+    if (!isEmployee) fetchLeavePressure(leavePeriod);
   }, [isEmployee, leavePeriod]);
 
-  // Start inline editing a department
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape' && selectedDeptId !== null && editingId === null) {
+        setSelectedDeptId(null);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [selectedDeptId, editingId]);
+
   const startEdit = (dept) => {
     if (!canEdit) return;
     setEditingId(dept.id);
@@ -180,14 +199,12 @@ const Headcount = () => {
     setInlineError('');
   };
 
-  // Cancel inline editing
   const cancelEdit = () => {
     setEditingId(null);
     setEditValue('');
     setInlineError('');
   };
 
-  // Save inline edit
   const saveEdit = async (deptId) => {
     const trimmed = String(editValue).trim();
     if (trimmed === '') {
@@ -197,7 +214,7 @@ const Headcount = () => {
 
     const num = Number(trimmed);
     if (isNaN(num) || !Number.isInteger(num) || num < 0) {
-      setInlineError('Must be an integer ≥ 0');
+      setInlineError('Must be an integer >= 0');
       return;
     }
 
@@ -209,7 +226,6 @@ const Headcount = () => {
         approved_headcount: num,
       });
 
-      // Update state locally
       setDepartments((prev) =>
         prev.map((d) => {
           if (d.id === deptId) {
@@ -217,34 +233,13 @@ const Headcount = () => {
             const current = Number(d.current) || 0;
             const gap = approved - current;
             const status = calculateHeadcountStatus(approved, current);
-            return {
-              ...d,
-              approved,
-              gap,
-              status,
-            };
+            return { ...d, approved, gap, status };
           }
           return d;
         })
       );
 
-      // Recompute attrition data for department with new approved target
-      setAttritionData((prev) => {
-        const existing = prev[deptId];
-        const leavers = existing?.leavers || 0;
-        const currentStaff = departments.find((d) => d.id === deptId)?.current || 0;
-        const newAttr = calculateAttrition(leavers, currentStaff, num);
-        return {
-          ...prev,
-          [deptId]: {
-            ...existing,
-            approved: num,
-            ...newAttr,
-          },
-        };
-      });
-
-      success('Approved headcount updated successfully!');
+      success('Approved headcount updated.');
       setEditingId(null);
       setEditValue('');
     } catch (err) {
@@ -256,7 +251,6 @@ const Headcount = () => {
     }
   };
 
-  // Handle keyboard submit / cancel in inline edit input
   const handleKeyDown = (e, deptId) => {
     if (e.key === 'Enter') {
       e.preventDefault();
@@ -267,17 +261,26 @@ const Headcount = () => {
     }
   };
 
-  // Filtered departments
-  const filteredDepartments = useMemo(() => {
-    return departments.filter((dept) => {
-      const matchesSearch = dept.name.toLowerCase().includes(search.toLowerCase().trim());
-      const matchesStatus =
-        statusFilter === 'ALL' || dept.status.toLowerCase() === statusFilter.toLowerCase();
-      return matchesSearch && matchesStatus;
-    });
-  }, [departments, search, statusFilter]);
+  // Compute attention score for a department (used for Needs Attention KPI & Attention sorting)
+  const getAttentionScore = (dept) => {
+    let score = 0;
+    if (dept.status === 'Needs Hiring' || dept.status === 'Overstaffed - Review') score += 3;
+    const leavers = attritionData[dept.id]?.leavers ?? 0;
+    const attr = calculateAttrition(leavers, dept.current, dept.approved);
+    if (attr.status === 'High') score += 2;
+    else if (attr.status === 'Medium') score += 1;
 
-  // Overall statistics
+    const otStatus = overtimeData[dept.id]?.status || 'No Data';
+    if (otStatus === 'Very High') score += 2;
+    else if (otStatus === 'High') score += 1;
+
+    const lvStatus = leaveData[dept.id]?.status || 'Low';
+    if (lvStatus === 'High') score += 2;
+    else if (lvStatus === 'Medium') score += 1;
+
+    return score;
+  };
+
   const stats = useMemo(() => {
     const totalApproved = departments.reduce((sum, d) => sum + (Number(d.approved) || 0), 0);
     const totalCurrent = departments.reduce((sum, d) => sum + (Number(d.current) || 0), 0);
@@ -286,46 +289,85 @@ const Headcount = () => {
     const balanced = departments.filter((d) => d.status === 'Balanced').length;
     const overstaffed = departments.filter((d) => d.status === 'Overstaffed - Review').length;
     const notSet = departments.filter((d) => d.status === 'Not Set').length;
+    const needsAttention = departments.filter(
+      (d) => d.status === 'Needs Hiring' || d.status === 'Overstaffed - Review' || getAttentionScore(d) >= 3
+    ).length;
 
     return {
       totalApproved,
       totalCurrent,
       netGap,
+      needsAttention,
       needsHiring,
       balanced,
       overstaffed,
       notSet,
     };
-  }, [departments]);
+  }, [departments, attritionData, overtimeData, leaveData]);
 
-  // Render colored status text with head/body icon (No Container Box)
+  const filteredAndSortedDepartments = useMemo(() => {
+    const filtered = departments.filter((dept) => {
+      const matchesSearch = dept.name.toLowerCase().includes(search.toLowerCase().trim());
+      const matchesStatus =
+        statusFilter === 'ALL' || dept.status.toLowerCase() === statusFilter.toLowerCase();
+      return matchesSearch && matchesStatus;
+    });
+
+    return [...filtered].sort((a, b) => {
+      const factor = sortBy.dir === 'asc' ? 1 : -1;
+      if (sortBy.field === 'name') {
+        return a.name.localeCompare(b.name) * factor;
+      }
+      if (sortBy.field === 'gap') {
+        return ((Number(a.gap) || 0) - (Number(b.gap) || 0)) * factor;
+      }
+      // attention
+      const scoreDiff = getAttentionScore(a) - getAttentionScore(b);
+      if (scoreDiff !== 0) return scoreDiff * factor;
+      return a.name.localeCompare(b.name);
+    });
+  }, [departments, search, statusFilter, sortBy, attritionData, overtimeData, leaveData]);
+
+  const toggleSort = (field) => {
+    setSortBy((prev) =>
+      prev.field === field
+        ? { field, dir: prev.dir === 'asc' ? 'desc' : 'asc' }
+        : { field, dir: field === 'name' ? 'asc' : 'desc' }
+    );
+  };
+
+  const selectedDept = useMemo(
+    () => departments.find((d) => d.id === selectedDeptId) || null,
+    [departments, selectedDeptId]
+  );
+
   const renderStatusBadge = (status) => {
     switch (status) {
       case 'Needs Hiring':
         return (
-          <span className="headcount-status-text status-needs-hiring badge-needs-hiring" data-testid="status-badge-needs-hiring">
+          <span className="headcount-status-text status-needs-hiring" data-testid="status-badge-needs-hiring">
             <UserPlus size={14} className="headcount-status-icon" />
             <span>Needs Hiring</span>
           </span>
         );
       case 'Balanced':
         return (
-          <span className="headcount-status-text status-balanced badge-balanced" data-testid="status-badge-balanced">
+          <span className="headcount-status-text status-balanced" data-testid="status-badge-balanced">
             <UserCheck size={14} className="headcount-status-icon" />
             <span>Balanced</span>
           </span>
         );
       case 'Overstaffed - Review':
         return (
-          <span className="headcount-status-text status-overstaffed badge-overstaffed" data-testid="status-badge-overstaffed">
+          <span className="headcount-status-text status-overstaffed" data-testid="status-badge-overstaffed">
             <UserMinus size={14} className="headcount-status-icon" />
-            <span>Overstaffed - Review</span>
+            <span>Overstaffed</span>
           </span>
         );
       case 'Not Set':
       default:
         return (
-          <span className="headcount-status-text status-not-set badge-not-set" data-testid="status-badge-not-set">
+          <span className="headcount-status-text status-not-set" data-testid="status-badge-not-set">
             <HelpCircle size={14} className="headcount-status-icon" />
             <span>Not Set</span>
           </span>
@@ -333,128 +375,28 @@ const Headcount = () => {
     }
   };
 
-  // Render gap as clean colored text (No Container Box)
   const renderGapText = (gap, status) => {
     if (status === 'Not Set') {
-      return (
-        <span className="headcount-gap-text gap-not-set" title="Approved target is 0">
-          —
-        </span>
-      );
+      return <span className="headcount-gap-text gap-not-set" title="Approved target is 0">—</span>;
     }
-
     if (gap > 0) {
-      return (
-        <span className="headcount-gap-text gap-positive positive" title={`${gap} positions open`}>
-          +{gap}
-        </span>
-      );
+      return <span className="headcount-gap-text gap-positive" title={`${gap} positions open`}>+{gap}</span>;
     }
-
     if (gap === 0) {
-      return (
-        <span className="headcount-gap-text gap-zero zero" title="Headcount is balanced">
-          0
-        </span>
-      );
+      return <span className="headcount-gap-text gap-zero" title="Headcount is balanced">0</span>;
     }
-
-    return (
-      <span className="headcount-gap-text gap-negative negative" title={`${Math.abs(gap)} over target`}>
-        {gap}
-      </span>
-    );
+    return <span className="headcount-gap-text gap-negative" title={`${Math.abs(gap)} over target`}>{gap}</span>;
   };
 
-  // Render attrition status as clean colored text (No Container Box)
-  const renderAttritionStatus = (status) => {
-    switch (status) {
-      case 'High':
-        return (
-          <span className="headcount-attrition-status status-high" data-testid="attrition-status-high">
-            <span className="attrition-dot"></span>
-            <span>High</span>
-          </span>
-        );
-      case 'Medium':
-        return (
-          <span className="headcount-attrition-status status-medium" data-testid="attrition-status-medium">
-            <span className="attrition-dot"></span>
-            <span>Medium</span>
-          </span>
-        );
-      case 'Low':
-      default:
-        return (
-          <span className="headcount-attrition-status status-low" data-testid="attrition-status-low">
-            <span className="attrition-dot"></span>
-            <span>Low</span>
-          </span>
-        );
+  const getSignalTone = (kind, status) => {
+    if (kind === 'attrition') {
+      return status === 'High' ? 'high' : status === 'Medium' ? 'medium' : 'low';
     }
-  };
-
-  // Render overtime status as clean colored text (No Container Box)
-  const renderOvertimeStatus = (status) => {
-    switch (status) {
-      case 'Very High':
-        return (
-          <span className="headcount-overtime-status status-very-high" data-testid="overtime-status-very-high">
-            <span className="overtime-dot"></span>
-            <span>Very High</span>
-          </span>
-        );
-      case 'High':
-        return (
-          <span className="headcount-overtime-status status-high" data-testid="overtime-status-high">
-            <span className="overtime-dot"></span>
-            <span>High</span>
-          </span>
-        );
-      case 'Normal':
-        return (
-          <span className="headcount-overtime-status status-normal" data-testid="overtime-status-normal">
-            <span className="overtime-dot"></span>
-            <span>Normal</span>
-          </span>
-        );
-      case 'No Data':
-      default:
-        return (
-          <span className="headcount-overtime-status status-no-data" data-testid="overtime-status-no-data">
-            <span className="overtime-dot"></span>
-            <span>No Data</span>
-          </span>
-        );
+    if (kind === 'overtime') {
+      return status === 'Very High' ? 'high' : status === 'High' ? 'medium' : status === 'Normal' ? 'low' : 'neutral';
     }
-  };
-
-  // Render leave pressure status as clean colored text (No Container Box)
-  const renderLeavePressureStatus = (status) => {
-    switch (status) {
-      case 'High':
-        return (
-          <span className="headcount-leave-status status-high" data-testid="leave-pressure-status-high">
-            <span className="leave-pressure-dot"></span>
-            <span>High</span>
-          </span>
-        );
-      case 'Medium':
-        return (
-          <span className="headcount-leave-status status-medium" data-testid="leave-pressure-status-medium">
-            <span className="leave-pressure-dot"></span>
-            <span>Medium</span>
-          </span>
-        );
-      case 'Low':
-      default:
-        return (
-          <span className="headcount-leave-status status-low" data-testid="leave-pressure-status-low">
-            <span className="leave-pressure-dot"></span>
-            <span>Low</span>
-          </span>
-        );
-    }
+    // leave
+    return status === 'High' ? 'high' : status === 'Medium' ? 'medium' : 'low';
   };
 
   if (isEmployee) {
@@ -471,6 +413,14 @@ const Headcount = () => {
     );
   }
 
+  const filterChips = [
+    { key: 'ALL', label: 'All', count: departments.length },
+    { key: 'Needs Hiring', label: 'Needs Hiring', count: stats.needsHiring },
+    { key: 'Balanced', label: 'Balanced', count: stats.balanced },
+    { key: 'Overstaffed - Review', label: 'Overstaffed', count: stats.overstaffed },
+    { key: 'Not Set', label: 'Not Set', count: stats.notSet },
+  ];
+
   return (
     <div className="app-container">
       <Sidebar />
@@ -484,21 +434,21 @@ const Headcount = () => {
               {canEdit ? (
                 <span className="headcount-scope-pill editable">
                   <ShieldCheck size={12} />
-                  <span>Admin & HR Planning (Editable)</span>
+                  <span>Admin & HR</span>
                 </span>
               ) : isDeptManager ? (
                 <span className="headcount-scope-pill">
                   <Building2 size={12} />
-                  <span>Department Manager (View Only)</span>
+                  <span>Department View</span>
                 </span>
               ) : null}
             </div>
             <p className="headcount-subtitle">
-              Track staffing levels, hiring gaps, attrition, overtime, and leave pressure by department.
+              Track headcount targets, staffing gaps, and workforce risk signals by department.
             </p>
           </div>
 
-          <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+          <div className="headcount-header-actions">
             <button
               onClick={handleRefresh}
               disabled={loading || attritionLoading || overtimeLoading || leaveLoading}
@@ -519,17 +469,17 @@ const Headcount = () => {
 
         {/* Global Error Banner */}
         {error && (
-          <div className="headcount-error-banner">
+          <div className="headcount-error-banner" role="alert">
             <AlertCircle size={18} />
             <span>{error}</span>
           </div>
         )}
 
-        {/* Top Metric Cards */}
+        {/* Single Row of 4 Summary Metrics */}
         <div className="headcount-stats-grid">
           <div className="headcount-stat-card">
-            <div className="headcount-stat-icon blue">
-              <TrendingUp size={22} />
+            <div className="headcount-stat-icon accent">
+              <Target size={20} />
             </div>
             <div>
               <div className="headcount-stat-label">Approved Target</div>
@@ -538,8 +488,8 @@ const Headcount = () => {
           </div>
 
           <div className="headcount-stat-card">
-            <div className="headcount-stat-icon primary">
-              <Users size={22} />
+            <div className="headcount-stat-icon neutral">
+              <Users size={20} />
             </div>
             <div>
               <div className="headcount-stat-label">Active Staff</div>
@@ -548,63 +498,31 @@ const Headcount = () => {
           </div>
 
           <div className="headcount-stat-card">
-            <div
-              className={`headcount-stat-icon ${
-                stats.netGap > 0 ? 'amber' : stats.netGap === 0 ? 'emerald' : 'rose'
-              }`}
-            >
-              {stats.netGap > 0 ? (
-                <UserPlus size={22} />
-              ) : stats.netGap === 0 ? (
-                <CheckCircle2 size={22} />
-              ) : (
-                <AlertTriangle size={22} />
-              )}
+            <div className="headcount-stat-icon amber">
+              <Diff size={20} />
             </div>
             <div>
               <div className="headcount-stat-label">Net Gap</div>
-              <div className="headcount-stat-value">
-                {stats.netGap > 0 ? `+${stats.netGap}` : stats.netGap}
-              </div>
-            </div>
-          </div>
-
-          <div className="headcount-stat-card">
-            <div className="headcount-stat-icon amber">
-              <UserPlus size={22} />
-            </div>
-            <div>
-              <div className="headcount-stat-label">Needs Hiring</div>
-              <div className="headcount-stat-value">{stats.needsHiring} depts</div>
-            </div>
-          </div>
-
-          <div className="headcount-stat-card">
-            <div className="headcount-stat-icon emerald">
-              <CheckCircle2 size={22} />
-            </div>
-            <div>
-              <div className="headcount-stat-label">Balanced</div>
-              <div className="headcount-stat-value">{stats.balanced} depts</div>
+              <div className="headcount-stat-value">{stats.netGap > 0 ? `+${stats.netGap}` : stats.netGap}</div>
             </div>
           </div>
 
           <div className="headcount-stat-card">
             <div className="headcount-stat-icon rose">
-              <AlertTriangle size={22} />
+              <ShieldAlert size={20} />
             </div>
             <div>
-              <div className="headcount-stat-label">Overstaffed</div>
-              <div className="headcount-stat-value">{stats.overstaffed} depts</div>
+              <div className="headcount-stat-label">Needs Attention</div>
+              <div className="headcount-stat-value">{stats.needsAttention} depts</div>
             </div>
           </div>
         </div>
 
-        {/* Filters Card */}
+        {/* Compact Single-Line Filters */}
         <div className="headcount-filter-card">
           <div className="headcount-filter-row">
             <div className="headcount-search-wrapper">
-              <Search size={16} className="headcount-search-icon" />
+              <Search size={15} className="headcount-search-icon" />
               <input
                 type="text"
                 placeholder="Search departments..."
@@ -615,369 +533,462 @@ const Headcount = () => {
               />
             </div>
 
-            <div className="headcount-status-pills">
-              {['ALL', 'Needs Hiring', 'Balanced', 'Overstaffed - Review', 'Not Set'].map(
-                (filterKey) => (
-                  <button
-                    key={filterKey}
-                    type="button"
-                    onClick={() => setStatusFilter(filterKey)}
-                    className={`headcount-pill-btn ${
-                      statusFilter === filterKey ? 'active' : ''
-                    }`}
-                  >
-                    {filterKey === 'ALL' ? 'All Statuses' : filterKey}
-                  </button>
-                )
-              )}
+            <div className="headcount-status-pills" role="group" aria-label="Filter by staffing status">
+              {filterChips.map((chip) => (
+                <button
+                  key={chip.key}
+                  type="button"
+                  onClick={() => setStatusFilter(chip.key)}
+                  className={`headcount-pill-btn ${statusFilter === chip.key ? 'active' : ''}`}
+                >
+                  <span>{chip.label}</span>
+                  <span className="headcount-pill-count">{chip.count}</span>
+                </button>
+              ))}
             </div>
 
-            <div className="headcount-attrition-filter">
-              <label htmlFor="attrition-period-select" className="headcount-attrition-label">
-                <Calendar size={14} className="headcount-attrition-calendar-icon" />
-                <span>Attrition:</span>
+            <div className="headcount-period-controls">
+              <label htmlFor="shared-period-select" className="headcount-period-label">
+                <Calendar size={14} />
+                <span>Period:</span>
               </label>
               <select
-                id="attrition-period-select"
-                value={attritionPeriod}
-                onChange={(e) => setAttritionPeriod(Number(e.target.value))}
-                className="headcount-attrition-select"
-                data-testid="attrition-period-select"
-                aria-label="Attrition Period"
+                id="shared-period-select"
+                value={sharedPeriod}
+                onChange={(e) => handleSharedPeriodChange(e.target.value)}
+                className="headcount-period-select"
+                aria-label="Shared analysis period"
               >
+                <option value={1}>Last 1 Month</option>
                 <option value={3}>Last 3 Months</option>
                 <option value={6}>Last 6 Months</option>
                 <option value={12}>Last 12 Months</option>
               </select>
-            </div>
 
-            <div className="headcount-attrition-filter">
-              <label htmlFor="overtime-period-select" className="headcount-attrition-label">
-                <Clock size={14} className="headcount-attrition-calendar-icon" />
-                <span>Overtime:</span>
-              </label>
-              <select
-                id="overtime-period-select"
-                value={overtimePeriod}
-                onChange={(e) => setOvertimePeriod(Number(e.target.value))}
-                className="headcount-attrition-select"
-                data-testid="overtime-period-select"
-                aria-label="Overtime Period"
+              <button
+                type="button"
+                className={`headcount-adv-btn ${showAdvancedPeriods ? 'active' : ''}`}
+                onClick={() => setShowAdvancedPeriods((prev) => !prev)}
+                aria-expanded={showAdvancedPeriods}
               >
-                <option value={1}>Last 1 Month</option>
-                <option value={3}>Last 3 Months</option>
-                <option value={6}>Last 6 Months</option>
-              </select>
-            </div>
-
-            <div className="headcount-attrition-filter">
-              <label htmlFor="leave-period-select" className="headcount-attrition-label">
-                <Calendar size={14} className="headcount-attrition-calendar-icon" />
-                <span>Leave Pressure:</span>
-              </label>
-              <select
-                id="leave-period-select"
-                value={leavePeriod}
-                onChange={(e) => setLeavePeriod(Number(e.target.value))}
-                className="headcount-attrition-select"
-                data-testid="leave-period-select"
-                aria-label="Leave Pressure Period"
-              >
-                <option value={1}>Last 1 Month</option>
-                <option value={3}>Last 3 Months</option>
-                <option value={6}>Last 6 Months</option>
-              </select>
+                <SlidersHorizontal size={13} />
+                <span>Advanced</span>
+              </button>
             </div>
           </div>
+
+          {showAdvancedPeriods && (
+            <div className="headcount-advanced-row">
+              <div className="headcount-adv-item">
+                <label htmlFor="attrition-period-select">Attrition:</label>
+                <select
+                  id="attrition-period-select"
+                  value={attritionPeriod}
+                  onChange={(e) => setAttritionPeriod(Number(e.target.value))}
+                  className="headcount-period-select"
+                  data-testid="attrition-period-select"
+                >
+                  <option value={3}>Last 3 Months</option>
+                  <option value={6}>Last 6 Months</option>
+                  <option value={12}>Last 12 Months</option>
+                </select>
+              </div>
+              <div className="headcount-adv-item">
+                <label htmlFor="overtime-period-select">Overtime:</label>
+                <select
+                  id="overtime-period-select"
+                  value={overtimePeriod}
+                  onChange={(e) => setOvertimePeriod(Number(e.target.value))}
+                  className="headcount-period-select"
+                  data-testid="overtime-period-select"
+                >
+                  <option value={1}>Last 1 Month</option>
+                  <option value={3}>Last 3 Months</option>
+                  <option value={6}>Last 6 Months</option>
+                </select>
+              </div>
+              <div className="headcount-adv-item">
+                <label htmlFor="leave-period-select">Leave Pressure:</label>
+                <select
+                  id="leave-period-select"
+                  value={leavePeriod}
+                  onChange={(e) => setLeavePeriod(Number(e.target.value))}
+                  className="headcount-period-select"
+                  data-testid="leave-period-select"
+                >
+                  <option value={1}>Last 1 Month</option>
+                  <option value={3}>Last 3 Months</option>
+                  <option value={6}>Last 6 Months</option>
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* UI Table Card */}
+        {/* 6-Column Table Card (No horizontal scroll on laptop; stacked cards on mobile) */}
         <div className="headcount-table-card">
-          <div className="headcount-table-scroll">
-            <table className="headcount-table" data-testid="headcount-table">
-              <thead>
+          <table className="headcount-table" data-testid="headcount-table">
+            <thead>
+              <tr>
+                <th className="headcount-th headcount-col-dept">
+                  <button type="button" className="headcount-sort-btn" onClick={() => toggleSort('name')}>
+                    <span>Department</span>
+                    <ArrowUpDown size={12} className={`headcount-sort-icon ${sortBy.field === 'name' ? 'active' : ''}`} />
+                  </button>
+                </th>
+                <th className="headcount-th numeric">Approved</th>
+                <th className="headcount-th numeric">Current</th>
+                <th className="headcount-th numeric">
+                  <button type="button" className="headcount-sort-btn numeric" onClick={() => toggleSort('gap')}>
+                    <span>Gap</span>
+                    <ArrowUpDown size={12} className={`headcount-sort-icon ${sortBy.field === 'gap' ? 'active' : ''}`} />
+                  </button>
+                </th>
+                <th className="headcount-th">Recommendation</th>
+                <th className="headcount-th headcount-col-signals">
+                  <button type="button" className="headcount-sort-btn" onClick={() => toggleSort('attention')}>
+                    <span>Signals</span>
+                    <ArrowUpDown size={12} className={`headcount-sort-icon ${sortBy.field === 'attention' ? 'active' : ''}`} />
+                  </button>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
                 <tr>
-                  <th className="headcount-th">Department</th>
-                  <th className="headcount-th numeric">Approved</th>
-                  <th className="headcount-th numeric">Current</th>
-                  <th className="headcount-th numeric">Gap</th>
-                  <th className="headcount-th">Status</th>
-                  <th className="headcount-th numeric" data-testid="th-attrition-rate">Attrition Rate</th>
-                  <th className="headcount-th" data-testid="th-attrition-status">Attrition Status</th>
-                  <th className="headcount-th numeric" data-testid="th-overtime-hours">Avg Daily Hours</th>
-                  <th className="headcount-th numeric" data-testid="th-overtime-percent">Overtime %</th>
-                  <th className="headcount-th" data-testid="th-overtime-status">Overtime Status</th>
-                  <th className="headcount-th numeric" data-testid="th-leave-avg">Avg On Leave</th>
-                  <th className="headcount-th numeric" data-testid="th-leave-pressure">Leave Pressure %</th>
-                  <th className="headcount-th" data-testid="th-leave-status">Leave Status</th>
-                  {canEdit && <th className="headcount-th actions">Actions</th>}
+                  <td colSpan={6} className="headcount-loading-cell">
+                    <RefreshCw size={22} className="animate-spin" style={{ margin: '0 auto 8px' }} />
+                    <div>Loading workforce data...</div>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td colSpan={canEdit ? 14 : 13} className="headcount-loading-cell">
-                      <RefreshCw size={24} className="animate-spin" style={{ margin: '0 auto 8px' }} />
-                      <div>Loading headcount data...</div>
-                    </td>
-                  </tr>
-                ) : filteredDepartments.length === 0 ? (
-                  <tr>
-                    <td colSpan={canEdit ? 14 : 13} className="headcount-empty-cell">
-                      <div className="headcount-empty-wrapper">
-                        <Users size={32} color="var(--text-muted)" />
-                        <span className="headcount-empty-title">No departments found</span>
-                        <span className="headcount-empty-desc">
-                          {search || statusFilter !== 'ALL'
-                            ? 'No departments match the selected filter criteria.'
-                            : 'No department headcount records available.'}
-                        </span>
-                      </div>
-                    </td>
-                  </tr>
-                ) : (
-                  filteredDepartments.map((dept) => {
-                    const isEditing = editingId === dept.id;
-                    const isSaving = savingId === dept.id;
+              ) : filteredAndSortedDepartments.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="headcount-empty-cell">
+                    <div className="headcount-empty-wrapper">
+                      <Users size={30} color="var(--text-muted)" />
+                      <span className="headcount-empty-title">No departments found</span>
+                      <span className="headcount-empty-desc">
+                        {search || statusFilter !== 'ALL'
+                          ? 'No departments match the selected filter criteria.'
+                          : 'No department headcount records available.'}
+                      </span>
+                    </div>
+                  </td>
+                </tr>
+              ) : (
+                filteredAndSortedDepartments.map((dept) => {
+                  const isEditing = editingId === dept.id;
+                  const isSaving = savingId === dept.id;
 
-                    return (
-                      <tr key={dept.id} className="headcount-tr" data-testid={`headcount-row-${dept.id}`}>
-                        {/* Department */}
-                        <td className="headcount-td">
-                          <div className="headcount-dept-cell">
-                            <DepartmentIcon name={dept.name} size={18} badgeSize={34} />
-                            <div>
-                              <div className="headcount-dept-name">{dept.name}</div>
-                              <div className="headcount-dept-id">ID #{dept.id}</div>
-                            </div>
+                  const leavers = attritionData[dept.id]?.leavers ?? 0;
+                  const attr = calculateAttrition(leavers, dept.current, dept.approved);
+                  const ot = overtimeData[dept.id] || {};
+                  const lv = leaveData[dept.id] || {};
+
+                  const otStatus = ot.status || 'No Data';
+                  const lvStatus = lv.status || 'Low';
+
+                  const attrTooltip = `Attrition: ${attr.status}, last ${attritionPeriod} months, ${leavers} ${leavers === 1 ? 'leaver' : 'leavers'}`;
+                  const otTooltip = otStatus !== 'No Data'
+                    ? `Overtime: ${otStatus}, last ${overtimePeriod} months, ${ot.avgDailyHours}h/day`
+                    : `Overtime: No Data, last ${overtimePeriod} months`;
+                  const lvTooltip = `Leave: ${lvStatus}, last ${leavePeriod} months, avg ${lv.avgOnLeave ?? 0} on leave`;
+
+                  return (
+                    <tr
+                      key={dept.id}
+                      className={`headcount-tr clickable ${selectedDeptId === dept.id ? 'selected' : ''}`}
+                      data-testid={`headcount-row-${dept.id}`}
+                      tabIndex={0}
+                      onClick={() => setSelectedDeptId(dept.id)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedDeptId(dept.id);
+                        }
+                      }}
+                    >
+                      {/* 1. Department */}
+                      <td className="headcount-td" data-label="Department">
+                        <div className="headcount-dept-cell">
+                          <DepartmentIcon name={dept.name} size={17} badgeSize={32} />
+                          <div>
+                            <div className="headcount-dept-name">{dept.name}</div>
+                            <div className="headcount-dept-id">ID #{dept.id}</div>
                           </div>
-                        </td>
+                        </div>
+                      </td>
 
-                        {/* Approved (with inline edit) */}
-                        <td className="headcount-td numeric">
-                          {isEditing ? (
-                            <div>
-                              <div className="headcount-inline-form">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="1"
-                                  value={editValue}
-                                  onChange={(e) => {
-                                    setEditValue(e.target.value);
-                                    if (inlineError) setInlineError('');
-                                  }}
-                                  onKeyDown={(e) => handleKeyDown(e, dept.id)}
-                                  className="headcount-inline-input"
-                                  autoFocus
-                                  disabled={isSaving}
-                                  aria-label={`Approved headcount for ${dept.name}`}
-                                  data-testid={`inline-input-${dept.id}`}
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => saveEdit(dept.id)}
-                                  disabled={isSaving}
-                                  className="headcount-inline-save-btn"
-                                  title="Save approved headcount (Enter)"
-                                  aria-label="Save approved headcount"
-                                  data-testid={`inline-save-${dept.id}`}
-                                >
-                                  <Check size={15} />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={cancelEdit}
-                                  disabled={isSaving}
-                                  className="headcount-inline-cancel-btn"
-                                  title="Cancel edit (Esc)"
-                                  aria-label="Cancel edit"
-                                  data-testid={`inline-cancel-${dept.id}`}
-                                >
-                                  <X size={15} />
-                                </button>
-                              </div>
-                              {inlineError && (
-                                <div
-                                  style={{
-                                    fontSize: '0.725rem',
-                                    color: '#dc2626',
-                                    marginTop: 4,
-                                    textAlign: 'right',
-                                  }}
-                                >
-                                  {inlineError}
-                                </div>
-                              )}
+                      {/* 2. Approved (with inline edit) */}
+                      <td
+                        className="headcount-td numeric"
+                        data-label="Approved"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        {isEditing ? (
+                          <div>
+                            <div className="headcount-inline-form">
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={editValue}
+                                onChange={(e) => {
+                                  setEditValue(e.target.value);
+                                  if (inlineError) setInlineError('');
+                                }}
+                                onKeyDown={(e) => handleKeyDown(e, dept.id)}
+                                className="headcount-inline-input"
+                                autoFocus
+                                disabled={isSaving}
+                                aria-label={`Approved headcount for ${dept.name}`}
+                                data-testid={`inline-input-${dept.id}`}
+                              />
+                              <button
+                                type="button"
+                                onClick={() => saveEdit(dept.id)}
+                                disabled={isSaving}
+                                className="headcount-inline-save-btn"
+                                title="Save (Enter)"
+                                aria-label="Save approved headcount"
+                                data-testid={`inline-save-${dept.id}`}
+                              >
+                                <Check size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={cancelEdit}
+                                disabled={isSaving}
+                                className="headcount-inline-cancel-btn"
+                                title="Cancel (Esc)"
+                                aria-label="Cancel edit"
+                                data-testid={`inline-cancel-${dept.id}`}
+                              >
+                                <X size={14} />
+                              </button>
                             </div>
-                          ) : (
-                            <div className="headcount-approved-cell">
-                              <span className="headcount-num approved" data-testid={`approved-val-${dept.id}`}>
-                                {dept.approved}
-                              </span>
-                              {canEdit && (
-                                <button
-                                  type="button"
-                                  onClick={() => startEdit(dept)}
-                                  className="headcount-inline-edit-btn"
-                                  title={`Edit approved headcount for ${dept.name}`}
-                                  aria-label={`Edit approved headcount for ${dept.name}`}
-                                  data-testid={`inline-edit-btn-${dept.id}`}
-                                >
-                                  <Edit2 size={13} />
-                                </button>
-                              )}
-                            </div>
-                          )}
-                        </td>
-
-                        {/* Current Active Staff */}
-                        <td className="headcount-td numeric">
-                          <Link
-                            to={`/employees?department_id=${dept.id}`}
-                            className={`headcount-current-link ${
-                              dept.current > 0 ? 'has-employees' : ''
-                            }`}
-                            title={`View active employees in ${dept.name}`}
-                            data-testid={`current-link-${dept.id}`}
-                          >
-                            <Users size={12} />
-                            <span data-testid={`current-val-${dept.id}`}>{dept.current}</span>
-                            <ArrowRight size={10} />
-                          </Link>
-                        </td>
-
-                        {/* Gap */}
-                        <td className="headcount-td numeric">
-                          <span data-testid={`gap-val-${dept.id}`}>
-                            {renderGapText(dept.gap, dept.status)}
-                          </span>
-                        </td>
-
-                        {/* Status */}
-                        <td className="headcount-td">
-                          {renderStatusBadge(dept.status)}
-                        </td>
-
-                        {/* Attrition Rate */}
-                        <td className="headcount-td numeric">
-                          {(() => {
-                            const leavers = attritionData[dept.id]?.leavers ?? 0;
-                            const attr = calculateAttrition(leavers, dept.current, dept.approved);
-                            return (
-                              <div className="headcount-attrition-rate-cell">
-                                <span className="headcount-attrition-rate" data-testid={`attrition-rate-${dept.id}`}>
-                                  {`${attr.attritionRate}%`}
-                                </span>
-                                <span className="headcount-attrition-leavers" data-testid={`attrition-leavers-${dept.id}`}>
-                                  {leavers} {leavers === 1 ? 'leaver' : 'leavers'}
-                                </span>
-                              </div>
-                            );
-                          })()}
-                        </td>
-
-                        {/* Attrition Status */}
-                        <td className="headcount-td">
-                          <div data-testid={`attrition-status-cell-${dept.id}`}>
-                            {(() => {
-                              const leavers = attritionData[dept.id]?.leavers ?? 0;
-                              const attr = calculateAttrition(leavers, dept.current, dept.approved);
-                              return renderAttritionStatus(attr.status);
-                            })()}
-                          </div>
-                        </td>
-
-                        {/* Avg Daily Hours */}
-                        <td className="headcount-td numeric">
-                          <div className="headcount-overtime-cell">
-                            <span className="headcount-overtime-hours" data-testid={`overtime-hours-${dept.id}`}>
-                              {overtimeData[dept.id] && overtimeData[dept.id].status !== 'No Data'
-                                ? `${overtimeData[dept.id].avgDailyHours}h`
-                                : '—'}
-                            </span>
-                            {overtimeData[dept.id]?.attendanceDays > 0 && (
-                              <span className="headcount-overtime-days" data-testid={`overtime-days-${dept.id}`}>
-                                {overtimeData[dept.id].attendanceDays} {overtimeData[dept.id].attendanceDays === 1 ? 'day' : 'days'}
-                              </span>
+                            {inlineError && (
+                              <div className="headcount-inline-error">{inlineError}</div>
                             )}
                           </div>
-                        </td>
-
-                        {/* Overtime % */}
-                        <td className="headcount-td numeric">
-                          <span className="headcount-overtime-percent" data-testid={`overtime-percent-${dept.id}`}>
-                            {overtimeData[dept.id] && overtimeData[dept.id].status !== 'No Data'
-                              ? `${overtimeData[dept.id].overtimePercent}%`
-                              : '—'}
-                          </span>
-                        </td>
-
-                        {/* Overtime Status */}
-                        <td className="headcount-td">
-                          <div data-testid={`overtime-status-cell-${dept.id}`}>
-                            {renderOvertimeStatus(overtimeData[dept.id]?.status || 'No Data')}
-                          </div>
-                        </td>
-
-                        {/* Avg On Leave */}
-                        <td className="headcount-td numeric">
-                          <div className="headcount-leave-cell">
-                            <span className="headcount-leave-avg" data-testid={`leave-avg-${dept.id}`}>
-                              {leaveData[dept.id] && leaveData[dept.id].avgOnLeave !== undefined
-                                ? `${leaveData[dept.id].avgOnLeave}`
-                                : '0'}
-                            </span>
-                            {leaveData[dept.id]?.totalLeaveDays > 0 && (
-                              <span className="headcount-leave-days" data-testid={`leave-days-${dept.id}`}>
-                                {leaveData[dept.id].totalLeaveDays} {leaveData[dept.id].totalLeaveDays === 1 ? 'day' : 'days'}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Leave Pressure % */}
-                        <td className="headcount-td numeric">
-                          <span className="headcount-leave-pressure" data-testid={`leave-pressure-${dept.id}`}>
-                            {leaveData[dept.id] && leaveData[dept.id].leavePressure !== undefined
-                              ? `${leaveData[dept.id].leavePressure}%`
-                              : '0%'}
-                          </span>
-                        </td>
-
-                        {/* Leave Status */}
-                        <td className="headcount-td">
-                          <div data-testid={`leave-status-cell-${dept.id}`}>
-                            {renderLeavePressureStatus(leaveData[dept.id]?.status || 'Low')}
-                          </div>
-                        </td>
-
-                        {/* Actions (for Admin / HR) */}
-                        {canEdit && (
-                          <td className="headcount-td actions">
-                            {!isEditing && (
+                        ) : (
+                          <div className="headcount-approved-cell">
+                            {canEdit && (
                               <button
                                 type="button"
                                 onClick={() => startEdit(dept)}
-                                className="btn btn-secondary"
-                                style={{ padding: '5px 10px', fontSize: '0.75rem', gap: 4 }}
-                                data-testid={`action-edit-btn-${dept.id}`}
+                                className="headcount-inline-edit-btn"
+                                title={`Edit approved headcount for ${dept.name}`}
+                                aria-label={`Edit approved headcount for ${dept.name}`}
+                                data-testid={`inline-edit-btn-${dept.id}`}
                               >
-                                <Edit2 size={12} />
-                                <span>Edit Target</span>
+                                <Edit2 size={13} />
                               </button>
                             )}
-                          </td>
+                            <span className="headcount-num approved" data-testid={`approved-val-${dept.id}`}>
+                              {dept.approved}
+                            </span>
+                          </div>
                         )}
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
+                      </td>
+
+                      {/* 3. Current */}
+                      <td
+                        className="headcount-td numeric"
+                        data-label="Current"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <Link
+                          to={`/employees?department_id=${dept.id}`}
+                          className={`headcount-current-link ${dept.current > 0 ? 'has-employees' : ''}`}
+                          title={`View active employees in ${dept.name}`}
+                          data-testid={`current-link-${dept.id}`}
+                        >
+                          <Users size={12} />
+                          <span data-testid={`current-val-${dept.id}`}>{dept.current}</span>
+                          <ArrowRight size={10} />
+                        </Link>
+                      </td>
+
+                      {/* 4. Gap */}
+                      <td className="headcount-td numeric" data-label="Gap">
+                        <span data-testid={`gap-val-${dept.id}`}>
+                          {renderGapText(dept.gap, dept.status)}
+                        </span>
+                      </td>
+
+                      {/* 5. Recommendation */}
+                      <td className="headcount-td" data-label="Recommendation">
+                        {renderStatusBadge(dept.status)}
+                      </td>
+
+                      {/* 6. Signals (vertically stacked 3-column grid per line: dot | label | value) */}
+                      <td className="headcount-td headcount-col-signals" data-label="Signals">
+                        <div className="headcount-signals-stack">
+                          <div
+                            className={`headcount-signal-line tone-${getSignalTone('attrition', attr.status)}`}
+                            title={attrTooltip}
+                            data-testid={`attrition-rate-${dept.id}`}
+                          >
+                            <span className="signal-dot" aria-hidden="true" />
+                            <span className="signal-label">Attrition</span>
+                            <span className="sr-only">{attr.status}</span>
+                            <span className="signal-value">{attr.attritionRate}%</span>
+                          </div>
+
+                          <div
+                            className={`headcount-signal-line tone-${getSignalTone('overtime', otStatus)}`}
+                            title={otTooltip}
+                            data-testid={`overtime-percent-${dept.id}`}
+                          >
+                            <span className="signal-dot" aria-hidden="true" />
+                            <span className="signal-label">Overtime</span>
+                            <span className="sr-only">{otStatus}</span>
+                            <span className="signal-value">{otStatus !== 'No Data' ? `${ot.overtimePercent}%` : '—'}</span>
+                          </div>
+
+                          <div
+                            className={`headcount-signal-line tone-${getSignalTone('leave', lvStatus)}`}
+                            title={lvTooltip}
+                            data-testid={`leave-pressure-${dept.id}`}
+                          >
+                            <span className="signal-dot" aria-hidden="true" />
+                            <span className="signal-label">Leave</span>
+                            <span className="sr-only">{lvStatus}</span>
+                            <span className="signal-value">{lv.leavePressure ?? 0}%</span>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
         </div>
       </main>
+
+      {/* Department Details Side Panel */}
+      {selectedDept && (
+        <div
+          className="headcount-drawer-backdrop"
+          onClick={() => setSelectedDeptId(null)}
+        >
+          <aside
+            className="headcount-drawer"
+            role="dialog"
+            aria-label={`${selectedDept.name} workforce breakdown`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="headcount-drawer-header">
+              <div className="headcount-dept-cell">
+                <DepartmentIcon name={selectedDept.name} size={18} badgeSize={36} />
+                <div>
+                  <h2 className="headcount-drawer-title">{selectedDept.name}</h2>
+                  <div className="headcount-dept-id">Department ID #{selectedDept.id}</div>
+                </div>
+              </div>
+              <button
+                type="button"
+                className="headcount-drawer-close"
+                onClick={() => setSelectedDeptId(null)}
+                aria-label="Close details panel"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="headcount-drawer-body">
+              <div className="headcount-drawer-status-row">
+                {renderStatusBadge(selectedDept.status)}
+                {canEdit && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ padding: '6px 12px', fontSize: '0.8125rem', gap: 6 }}
+                    onClick={() => {
+                      startEdit(selectedDept);
+                      setSelectedDeptId(null);
+                    }}
+                    data-testid={`action-edit-btn-${selectedDept.id}`}
+                  >
+                    <Edit2 size={13} />
+                    <span>Edit Target</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="headcount-drawer-kpis">
+                <div className="drawer-kpi">
+                  <span>Approved Target</span>
+                  <strong>{selectedDept.approved}</strong>
+                </div>
+                <div className="drawer-kpi">
+                  <span>Active Staff</span>
+                  <strong>{selectedDept.current}</strong>
+                </div>
+                <div className="drawer-kpi">
+                  <span>Net Gap</span>
+                  <strong>{renderGapText(selectedDept.gap, selectedDept.status)}</strong>
+                </div>
+              </div>
+
+              {(() => {
+                const leavers = attritionData[selectedDept.id]?.leavers ?? 0;
+                const attr = calculateAttrition(leavers, selectedDept.current, selectedDept.approved);
+                const ot = overtimeData[selectedDept.id] || {};
+                const lv = leaveData[selectedDept.id] || {};
+                const isLowConfidence =
+                  (Number(selectedDept.current) || 0) < 5 ||
+                  ot.status === 'No Data' ||
+                  (ot.attendanceDays || 0) < 5;
+
+                return (
+                  <>
+                    {isLowConfidence && (
+                      <div className="headcount-low-conf-note">
+                        <Info size={15} />
+                        <span>
+                          Low-confidence note: small headcount or limited attendance days in this period; interpret percentages alongside raw counts.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="drawer-metric-section">
+                      <h3><UserMinus size={14} aria-hidden="true" /> Attrition ({attritionPeriod} months)</h3>
+                      <div className="drawer-metric-grid">
+                        <div><span>Rate</span><strong>{attr.attritionRate}%</strong></div>
+                        <div><span>Leavers</span><strong>{leavers}</strong></div>
+                        <div><span>Status</span><strong>{attr.status}</strong></div>
+                      </div>
+                    </div>
+
+                    <div className="drawer-metric-section">
+                      <h3><Clock size={14} aria-hidden="true" /> Overtime ({overtimePeriod} months)</h3>
+                      <div className="drawer-metric-grid">
+                        <div><span>Avg Daily Hours</span><strong>{ot.status && ot.status !== 'No Data' ? `${ot.avgDailyHours}h` : '—'}</strong></div>
+                        <div><span>Overtime %</span><strong>{ot.status && ot.status !== 'No Data' ? `${ot.overtimePercent}%` : '—'}</strong></div>
+                        <div><span>Attendance Days</span><strong>{ot.attendanceDays ?? 0}</strong></div>
+                        <div><span>Status</span><strong>{ot.status || 'No Data'}</strong></div>
+                      </div>
+                    </div>
+
+                    <div className="drawer-metric-section">
+                      <h3><CalendarOff size={14} aria-hidden="true" /> Leave Pressure ({leavePeriod} months)</h3>
+                      <div className="drawer-metric-grid">
+                        <div><span>Avg On Leave</span><strong>{lv.avgOnLeave ?? 0}</strong></div>
+                        <div><span>Leave Pressure %</span><strong>{lv.leavePressure ?? 0}%</strong></div>
+                        <div><span>Total Leave Days</span><strong>{lv.totalLeaveDays ?? 0}</strong></div>
+                        <div><span>Status</span><strong>{lv.status || 'Low'}</strong></div>
+                      </div>
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          </aside>
+        </div>
+      )}
     </div>
   );
 };

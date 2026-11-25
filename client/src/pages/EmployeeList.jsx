@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams, useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import Sidebar from '../components/Sidebar';
 import ImportModal from '../components/ImportModal';
@@ -26,7 +26,8 @@ import {
   ArrowDown,
   Calendar,
   Filter,
-  RotateCcw
+  RotateCcw,
+  MoreHorizontal
 } from 'lucide-react';
 import './EmployeeList.css';
 import { useNotification } from '../context/NotificationContext';
@@ -35,7 +36,15 @@ import { useAuth } from '../context/AuthContext';
 const EmployeeList = () => {
   const { user, isAdmin, can } = useAuth();
   const { success, error: notifyError } = useNotification();
+  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
+  const [openMenuId, setOpenMenuId] = useState(null);
+
+  useEffect(() => {
+    const closeMenu = () => setOpenMenuId(null);
+    document.addEventListener('click', closeMenu);
+    return () => document.removeEventListener('click', closeMenu);
+  }, []);
 
   // Extract filter and pagination state from URL search params
   const urlPage = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
@@ -488,15 +497,16 @@ const EmployeeList = () => {
           </div>
         )}
 
-        {/* Advanced Search & Filtering Card */}
+        {/* Search & Filtering Bar */}
         <div className="card employee-filter-card">
           <div className="employee-filters-primary-row">
             {/* Search across name, email, phone, and employee ID */}
             <div className="employee-search-box">
-              <Search size={16} className="employee-search-icon" />
+              <Search size={15} className="employee-search-icon" aria-hidden="true" />
               <input
                 type="text"
-                placeholder="Search name, email, phone, or ID..."
+                placeholder="Search employees"
+                aria-label="Search employees"
                 value={searchInput}
                 onChange={(e) => setSearchInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -515,6 +525,7 @@ const EmployeeList = () => {
                   }}
                   className="employee-search-clear-btn"
                   title="Clear search"
+                  aria-label="Clear search"
                 >
                   <X size={14} />
                 </button>
@@ -526,7 +537,8 @@ const EmployeeList = () => {
               <select
                 value={user?.role === 'department_manager' ? (user?.department_id || urlDept) : urlDept}
                 onChange={(e) => updateParams({ department_id: e.target.value }, true)}
-                className="select"
+                className="select employee-filter-select"
+                aria-label="Filter by Department"
                 title={user?.role === 'department_manager' ? 'Department locked to your assigned department' : 'Filter by Department'}
                 disabled={user?.role === 'department_manager'}
               >
@@ -542,7 +554,8 @@ const EmployeeList = () => {
               <select
                 value={urlDesignation}
                 onChange={(e) => updateParams({ designation: e.target.value }, true)}
-                className="select"
+                className="select employee-filter-select"
+                aria-label="Filter by Designation"
                 title="Filter by Designation"
               >
                 <option value="all">All Designations</option>
@@ -557,7 +570,8 @@ const EmployeeList = () => {
               <select
                 value={urlStatus}
                 onChange={(e) => updateParams({ status: e.target.value }, true)}
-                className="select"
+                className="select employee-filter-select"
+                aria-label="Filter by Status"
                 title="Filter by Status"
               >
                 <option value="all">All Statuses</option>
@@ -565,15 +579,13 @@ const EmployeeList = () => {
                 <option value="Inactive">Inactive</option>
               </select>
             </div>
-          </div>
 
-          {/* Secondary Filter Row: Joining Date Range & Reset Button */}
-          <div className="employee-filters-secondary-row">
+            {/* Joined Date Range */}
             <div className="employee-filter-date-group">
               <DateRangePicker
                 startDate={urlStartDate}
                 endDate={urlEndDate}
-                label="Joined Date:"
+                label=""
                 onChange={({ startDate, endDate }) => {
                   updateParams({ startDate, endDate }, true);
                 }}
@@ -581,14 +593,24 @@ const EmployeeList = () => {
             </div>
 
             {hasActiveFilters && (
-              <button 
-                type="button" 
-                onClick={clearFilters} 
+              <button
+                type="button"
+                onClick={clearFilters}
                 className="btn btn-secondary employee-filter-reset-btn"
-                title="Reset all filters to default"
+                title="Clear all active filters"
               >
-                <RotateCcw size={13} />
-                <span>Reset Filters</span>
+                <RotateCcw size={13} aria-hidden="true" />
+                <span>
+                  Clear filters (
+                  {[
+                    Boolean(urlSearch),
+                    user?.role !== 'department_manager' && urlDept !== 'all',
+                    urlDesignation !== 'all',
+                    urlStatus !== 'all',
+                    Boolean(urlStartDate || urlEndDate),
+                  ].filter(Boolean).length}
+                  )
+                </span>
               </button>
             )}
           </div>
@@ -601,10 +623,10 @@ const EmployeeList = () => {
               <thead>
                 <tr className="employee-table-head">
                   {/* Employee Name (Sortable) */}
-                  <th 
-                    className="employee-th sortable" 
+                  <th
+                    className="employee-th sortable"
                     onClick={() => handleSort('name')}
-                    title="Sort by Name"
+                    title="Sort by Employee"
                   >
                     <div className="th-sort-wrapper">
                       <span>Employee</span>
@@ -612,24 +634,12 @@ const EmployeeList = () => {
                     </div>
                   </th>
 
-                  {/* ID (Sortable) */}
-                  <th 
-                    className="employee-th sortable" 
-                    onClick={() => handleSort('id')}
-                    title="Sort by Employee ID"
-                  >
-                    <div className="th-sort-wrapper">
-                      <span>ID</span>
-                      {renderSortIcon('id')}
-                    </div>
-                  </th>
-
-                  {/* Contact Info (Not sortable directly) */}
-                  <th className="employee-th">Contact</th>
+                  {/* Contact Info */}
+                  <th className="employee-th employee-col-contact">Contact</th>
 
                   {/* Department (Sortable) */}
-                  <th 
-                    className="employee-th sortable" 
+                  <th
+                    className="employee-th sortable"
                     onClick={() => handleSort('department')}
                     title="Sort by Department"
                   >
@@ -640,8 +650,8 @@ const EmployeeList = () => {
                   </th>
 
                   {/* Designation (Sortable) */}
-                  <th 
-                    className="employee-th sortable" 
+                  <th
+                    className="employee-th sortable"
                     onClick={() => handleSort('designation')}
                     title="Sort by Designation"
                   >
@@ -652,8 +662,8 @@ const EmployeeList = () => {
                   </th>
 
                   {/* Status (Sortable) */}
-                  <th 
-                    className="employee-th sortable" 
+                  <th
+                    className="employee-th sortable"
                     onClick={() => handleSort('status')}
                     title="Sort by Status"
                   >
@@ -664,8 +674,8 @@ const EmployeeList = () => {
                   </th>
 
                   {/* Joined Date (Sortable) */}
-                  <th 
-                    className="employee-th sortable" 
+                  <th
+                    className="employee-th sortable"
                     onClick={() => handleSort('created_at')}
                     title="Sort by Joined Date"
                   >
@@ -682,7 +692,7 @@ const EmployeeList = () => {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan="8" className="employee-loading-cell">
+                    <td colSpan="7" className="employee-loading-cell">
                       <div className="employee-table-loader-wrap">
                         <div className="employee-table-spinner" />
                         <span>Loading employee directory...</span>
@@ -691,19 +701,19 @@ const EmployeeList = () => {
                   </tr>
                 ) : employees.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="employee-empty-cell">
+                    <td colSpan="7" className="employee-empty-cell">
                       <div className="employee-empty-wrapper">
                         <Users size={34} color="var(--text-muted)" />
                         <span className="employee-empty-title">No employees found</span>
                         <span className="employee-empty-desc">
-                          {hasActiveFilters 
+                          {hasActiveFilters
                             ? 'No employees match the applied filter criteria. Try resetting or adjusting your search.'
                             : 'No employee records exist yet. Add a new team member to get started.'}
                         </span>
                         {hasActiveFilters && (
-                          <button 
-                            type="button" 
-                            onClick={clearFilters} 
+                          <button
+                            type="button"
+                            onClick={clearFilters}
                             className="btn btn-secondary btn-sm mt-2"
                           >
                             <RotateCcw size={13} />
@@ -728,13 +738,25 @@ const EmployeeList = () => {
                           year: 'numeric'
                         })
                       : '—';
+                    const statusSlug = (emp.status || 'Active').toLowerCase().replace(/\s+/g, '-');
+                    const canEditEmp = isAdmin || can('employee.update');
+                    const canDeleteEmp = isAdmin || can('employee.delete');
 
                     return (
-                      <tr key={emp.id} className="employee-tr">
-                        {/* Profile Name & Avatar */}
-                        <td className="employee-td">
+                      <tr
+                        key={emp.id}
+                        className="employee-tr clickable"
+                        onClick={() => navigate(`/employees/${emp.id}`)}
+                      >
+                        {/* Profile Name, Avatar & ID */}
+                        <td className="employee-td" data-label="Employee">
                           <div className="employee-cell-profile">
-                            <Link to={`/employees/${emp.id}`} className="employee-avatar-thumb-link" title="View Profile">
+                            <Link
+                              to={`/employees/${emp.id}`}
+                              className="employee-avatar-thumb-link"
+                              title={`View ${emp.name}`}
+                              onClick={(e) => e.stopPropagation()}
+                            >
                               {avatarSrc ? (
                                 <img src={avatarSrc} alt={emp.name} className="employee-avatar-thumb" />
                               ) : (
@@ -742,80 +764,110 @@ const EmployeeList = () => {
                               )}
                             </Link>
                             <div className="employee-info-col">
-                              <Link to={`/employees/${emp.id}`} className="employee-name-link" title="View Profile">
+                              <Link
+                                to={`/employees/${emp.id}`}
+                                className="employee-name-link"
+                                title={emp.name}
+                                onClick={(e) => e.stopPropagation()}
+                              >
                                 {emp.name}
                               </Link>
+                              <span className="employee-id">#{emp.id}</span>
                             </div>
                           </div>
                         </td>
 
-                        {/* ID */}
-                        <td className="employee-td">
-                          <span className="employee-id-badge">#{emp.id}</span>
-                        </td>
-
                         {/* Contact */}
-                        <td className="employee-td">
-                          <div className="employee-email">{emp.email}</div>
-                          <div className="employee-phone">{emp.phone}</div>
+                        <td className="employee-td employee-col-contact" data-label="Contact">
+                          <div className="employee-email" title={emp.email}>{emp.email}</div>
+                          <div className="employee-phone">{emp.phone || '—'}</div>
                         </td>
 
                         {/* Department */}
-                        <td className="employee-td">
+                        <td className="employee-td" data-label="Department">
                           <span className="employee-dept-badge">
                             {emp.department_name || 'Unassigned'}
                           </span>
                         </td>
 
                         {/* Designation */}
-                        <td className="employee-td">
+                        <td className="employee-td" data-label="Designation">
                           <span className="employee-designation-text">{emp.designation}</span>
                         </td>
 
                         {/* Status */}
-                        <td className="employee-td">
-                          <span className={`badge-status ${emp.status === 'Active' ? 'badge-status-active' : 'badge-status-inactive'}`}>
+                        <td className="employee-td" data-label="Status">
+                          <span className={`employee-status-pill status-${statusSlug}`}>
                             {emp.status}
                           </span>
                         </td>
 
                         {/* Joined Date */}
-                        <td className="employee-td">
+                        <td className="employee-td" data-label="Joined">
                           <span className="employee-joined-date">{joinedFormatted}</span>
                         </td>
 
                         {/* Actions */}
-                        <td className="employee-td actions">
+                        <td
+                          className="employee-td actions"
+                          data-label="Actions"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <div className="employee-actions-group">
-                            <Link
-                              to={`/employees/${emp.id}`}
-                              className="btn btn-secondary employee-action-btn"
-                              title="View Employee Profile"
-                            >
-                              <User size={14} />
-                              <span>Profile</span>
-                            </Link>
-                            {(isAdmin || can('employee.update')) && (
+                            {canEditEmp && (
                               <Link
                                 to={`/employees/edit/${emp.id}`}
-                                className="btn btn-secondary employee-action-btn"
+                                className="employee-icon-btn"
                                 title="Edit Employee"
+                                aria-label={`Edit ${emp.name}`}
                               >
                                 <Edit2 size={14} />
-                                <span>Edit</span>
                               </Link>
                             )}
-                            {(isAdmin || can('employee.delete')) && (
+
+                            <div className="employee-more-wrap">
                               <button
                                 type="button"
-                                onClick={() => setDeleteTarget(emp)}
-                                className="btn btn-danger employee-action-btn"
-                                title="Move to Deleted Archive"
+                                className="employee-icon-btn"
+                                title="More actions"
+                                aria-label={`More actions for ${emp.name}`}
+                                aria-expanded={openMenuId === emp.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setOpenMenuId((prev) => (prev === emp.id ? null : emp.id));
+                                }}
                               >
-                                <Trash2 size={14} />
-                                <span>Delete</span>
+                                <MoreHorizontal size={15} />
                               </button>
-                            )}
+
+                              {openMenuId === emp.id && (
+                                <div className="employee-row-menu" role="menu">
+                                  <Link
+                                    to={`/employees/${emp.id}`}
+                                    className="employee-row-menu-item"
+                                    role="menuitem"
+                                    onClick={() => setOpenMenuId(null)}
+                                  >
+                                    <User size={14} />
+                                    <span>View Profile</span>
+                                  </Link>
+                                  {canDeleteEmp && (
+                                    <button
+                                      type="button"
+                                      className="employee-row-menu-item danger"
+                                      role="menuitem"
+                                      onClick={() => {
+                                        setOpenMenuId(null);
+                                        setDeleteTarget(emp);
+                                      }}
+                                    >
+                                      <Trash2 size={14} />
+                                      <span>Delete</span>
+                                    </button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           </div>
                         </td>
                       </tr>

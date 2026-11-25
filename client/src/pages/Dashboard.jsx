@@ -24,6 +24,7 @@ const Dashboard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [activeTooltip, setActiveTooltip] = useState(null);
+  const [showAllDepts, setShowAllDepts] = useState(false);
 
   const fetchStats = async () => {
     try {
@@ -154,7 +155,7 @@ const Dashboard = () => {
               </div>
 
               <div className="card dashboard-stat-card">
-                <div className="dashboard-stat-icon muted">
+                <div className="dashboard-stat-icon danger">
                   <UserX size={24} />
                 </div>
                 <div>
@@ -369,8 +370,11 @@ const Dashboard = () => {
                   </Link>
                 </div>
 
-                <div className="dashboard-dept-chart-list">
-                  {stats?.departmentBreakdown?.map((dept) => {
+                <div className={`dashboard-dept-chart-list ${showAllDepts ? 'expanded' : ''}`}>
+                  {(showAllDepts
+                    ? stats?.departmentBreakdown
+                    : stats?.departmentBreakdown?.slice(0, 5)
+                  )?.map((dept) => {
                     const deptCount = Number(dept.employeeCount) || 0;
                     const deptSharePct = totalEmployees > 0 
                       ? Math.round((deptCount / totalEmployees) * 100) 
@@ -411,6 +415,18 @@ const Dashboard = () => {
                     );
                   })}
                 </div>
+
+                {(stats?.departmentBreakdown?.length || 0) > 5 && (
+                  <button
+                    type="button"
+                    className="dashboard-dept-toggle-btn"
+                    onClick={() => setShowAllDepts((prev) => !prev)}
+                  >
+                    {showAllDepts
+                      ? 'Show top 5 departments'
+                      : `Show all ${stats.departmentBreakdown.length} departments`}
+                  </button>
+                )}
               </div>
 
               {/* Recently Joined Employees */}

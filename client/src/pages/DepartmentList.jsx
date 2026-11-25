@@ -163,10 +163,6 @@ const DepartmentList = () => {
           </div>
 
           <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
-            <Link to="/workforce" className="btn btn-secondary" title="View Workforce Planning">
-              <TrendingUp size={16} />
-              <span>Workforce Planning</span>
-            </Link>
             <button
               onClick={() => {
                 setIsAddOpen(true);
