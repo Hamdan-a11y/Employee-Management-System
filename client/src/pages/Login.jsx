@@ -41,7 +41,7 @@ const Login = () => {
     try {
       setLoading(true);
       const res = await api.post('/auth/login', formData);
-      login(res.data.user);
+      login(res.data.user, res.data.accessToken);
       navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
