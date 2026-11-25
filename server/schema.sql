@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS users (
   employee_id INT NULL,
   department_id INT NULL,
   token_version INT DEFAULT 1,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  disabled_at DATETIME NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (employee_id) REFERENCES employees(id) ON DELETE SET NULL,
   FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE SET NULL,
@@ -62,11 +64,31 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   id INT AUTO_INCREMENT PRIMARY KEY,
   user_id INT NOT NULL,
   token_hash VARCHAR(64) NOT NULL,
+  family_id VARCHAR(64) NOT NULL,
+  device_id VARCHAR(64) NULL,
+  ip VARCHAR(45) NULL,
+  user_agent VARCHAR(512) NULL,
   expires_at DATETIME NOT NULL,
+  revoked_at DATETIME NULL,
+  replaced_by INT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
   INDEX idx_refresh_token_hash (token_hash),
-  INDEX idx_refresh_user (user_id)
+  INDEX idx_refresh_user (user_id),
+  INDEX idx_refresh_family (family_id)
+);
+
+CREATE TABLE IF NOT EXISTS security_events (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  type ENUM('login_failed', 'lockout', 'token_reuse', 'rate_limit', 'new_device', 'permission_denied') NOT NULL,
+  user_id INT NULL,
+  ip VARCHAR(45) NULL,
+  details TEXT NULL,
+  created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+  INDEX idx_sec_events_type (type),
+  INDEX idx_sec_events_user (user_id),
+  INDEX idx_sec_events_created (created_at DESC)
 );
 
 CREATE TABLE IF NOT EXISTS employee_documents (

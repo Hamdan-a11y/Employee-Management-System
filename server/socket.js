@@ -23,7 +23,18 @@ function initSocket(httpServer) {
     try {
       const authHeader = socket.handshake.headers?.authorization;
       const bearerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
-      const token = socket.handshake.auth?.token || bearerToken || socket.handshake.query?.token;
+      let cookieToken = null;
+      const rawCookies = socket.handshake.headers?.cookie;
+      if (rawCookies) {
+        for (const part of rawCookies.split(';')) {
+          const [k, ...v] = part.trim().split('=');
+          if (k === '__Host-access_token' || k === 'access_token') {
+            cookieToken = decodeURIComponent(v.join('='));
+            if (k === '__Host-access_token') break;
+          }
+        }
+      }
+      const token = socket.handshake.auth?.token || bearerToken || socket.handshake.query?.token || cookieToken;
 
       if (!token) {
         return next(new Error('Authentication error: Access token required'));

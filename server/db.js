@@ -8,7 +8,7 @@ const poolConfig = {
   password: config.db.password,
   database: config.db.database,
   waitForConnections: true,
-  connectionLimit: 15,
+  connectionLimit: parseInt(process.env.DB_CONNECTION_LIMIT || '100', 10),
   queueLimit: 0,
   connectTimeout: 10000,
   enableKeepAlive: true,

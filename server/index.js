@@ -8,7 +8,7 @@ const config = require('./config/env');
 const pool = require('./db');
 const logger = require('./utils/logger');
 const { allowedOrigins, isAllowedOrigin } = require('./utils/corsOrigins');
-const { apiLimiter, authLimiter } = require('./middleware/rateLimiter');
+const { apiLimiter, authLimiter, loginLimiter } = require('./middleware/rateLimiter');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 
 const authRoutes = require('./routes/auth');
@@ -30,6 +30,7 @@ const overtimeRoutes = require('./routes/overtime');
 const jobRoutes = require('./routes/jobs');
 const analyticsRoutes = require('./routes/analytics');
 const periodRoutes = require('./routes/periods');
+const securityEventRoutes = require('./routes/securityEvents');
 const { initializeScheduler } = require('./jobs/scheduler');
 const swaggerUi = require('swagger-ui-express');
 const swaggerSpec = require('./docs/swaggerSpec');
@@ -134,7 +135,7 @@ app.get('/api-docs.json', (req, res) => res.json(swaggerSpec));
 app.use('/api/', apiLimiter);
 
 // Authentication rate limiter for sensitive endpoints
-app.use('/api/auth/login', authLimiter);
+app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth/register', authLimiter);
 
 // API Routes
@@ -157,6 +158,7 @@ app.use('/api/overtime', overtimeRoutes);
 app.use('/api/jobs', jobRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/periods', periodRoutes);
+app.use('/api/security-events', securityEventRoutes);
 
 // Health check route
 app.get('/api/health', async (req, res) => {
