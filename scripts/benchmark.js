@@ -242,11 +242,65 @@ async function runBenchmark(label = 'before', options = {}) {
     fs.writeFileSync(mdPath, md);
     console.log(`[Output] Written Markdown benchmark report: ${mdPath}`);
 
+    // If running 'after', automatically generate comparison.md
+    if (label === 'after') {
+      generateComparison(docsDir);
+    }
+
   } finally {
     await conn.end();
   }
 
   return results;
+}
+
+function generateComparison(docsDir = path.join(__dirname, '../docs/performance')) {
+  const beforeJsonPath = path.join(docsDir, 'before.json');
+  const afterJsonPath = path.join(docsDir, 'after.json');
+  const compMdPath = path.join(docsDir, 'comparison.md');
+
+  if (!fs.existsSync(beforeJsonPath) || !fs.existsSync(afterJsonPath)) {
+    console.warn('[Comparison] Missing before.json or after.json, skipping comparison.md generation.');
+    return;
+  }
+
+  const beforeData = JSON.parse(fs.readFileSync(beforeJsonPath, 'utf8'));
+  const afterData = JSON.parse(fs.readFileSync(afterJsonPath, 'utf8'));
+
+  let md = `# Attendance Performance Optimization Comparison\n\n`;
+  md += `Comparison between baseline (**before** optimization) and indexed/optimized execution (**after** optimization).\n\n`;
+  md += `- **Database**: \`${afterData.database || 'employee_test_db'}\` (1,096,000 attendance records)\n`;
+  md += `- **Date**: ${new Date().toISOString()}\n\n`;
+
+  md += `## Query Execution Time Comparison\n\n`;
+  md += `| Query | Before (ms) | After (ms) | % Gain |\n`;
+  md += `|---|---|---|---|\n`;
+
+  for (const [key, afterQuery] of Object.entries(afterData.results)) {
+    const beforeQuery = beforeData.results[key];
+    const beforeMs = beforeQuery ? beforeQuery.mean_ms : 'N/A';
+    const afterMs = afterQuery.mean_ms;
+    let gainStr = 'N/A';
+
+    if (beforeQuery && beforeMs > 0) {
+      const gain = Math.round(((beforeMs - afterMs) / beforeMs) * 1000) / 10;
+      gainStr = gain >= 0 ? `+${gain}%` : `${gain}%`;
+    }
+
+    md += `| **${afterQuery.name}** | \`${beforeMs} ms\` | \`${afterMs} ms\` | **${gainStr}** |\n`;
+  }
+
+  // Preserve load test section if it exists, or add placeholder
+  if (fs.existsSync(compMdPath)) {
+    const existingContent = fs.readFileSync(compMdPath, 'utf8');
+    const loadTestIdx = existingContent.indexOf('## Load Test Results');
+    if (loadTestIdx !== -1) {
+      md += '\n\n' + existingContent.slice(loadTestIdx);
+    }
+  }
+
+  fs.writeFileSync(compMdPath, md);
+  console.log(`[Output] Written comparison report: ${compMdPath}`);
 }
 
 if (require.main === module) {
