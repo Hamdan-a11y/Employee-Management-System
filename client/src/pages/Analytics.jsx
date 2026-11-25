@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import api from '../services/api';
 import Sidebar from '../components/Sidebar';
@@ -34,6 +34,21 @@ const formatMonthStr = (dateObj = new Date()) => {
   return `${y}-${m}`;
 };
 
+const formatMinutesToHm = (totalMinutes) => {
+  const mins = Math.max(0, Math.round(Number(totalMinutes) || 0));
+  const h = Math.floor(mins / 60);
+  const m = mins % 60;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+};
+
+const formatHoursVal = (val) => {
+  const num = Number(val) || 0;
+  return Number.isInteger(num) ? String(num) : num.toFixed(1).replace(/\.0$/, '');
+};
+
+const STANDARD_SHIFT_HOURS = 8;
+
 const Analytics = () => {
   const { user, isAdmin, isHR, isDeptManager, isEmployee } = useAuth();
   const { error: notifyError } = useNotification();
@@ -67,6 +82,11 @@ const Analytics = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [latesPage, setLatesPage] = useState(1);
+  const hoursListRef = useRef(null);
+  const topListRef = useRef(null);
+  const bottomListRef = useRef(null);
+  const [topAtEnd, setTopAtEnd] = useState(false);
+  const [bottomAtEnd, setBottomAtEnd] = useState(false);
 
   // Employee Calendar Modal state
   const [selectedEmployeeId, setSelectedEmployeeId] = useState(null);
@@ -207,10 +227,193 @@ const Analytics = () => {
     return Math.max(...absenteeismTrend.map((t) => t.absent_days || 0), 5);
   }, [absenteeismTrend]);
 
+  // Department Attendance: sort lowest first, "No data" (expected_days === 0) at end
+  const sortedDeptAttendance = useMemo(() => {
+    return [...deptAttendance].sort((a, b) => {
+      const aHasData = Number(a.expected_days) > 0;
+      const bHasData = Number(b.expected_days) > 0;
+      if (aHasData !== bHasData) return aHasData ? -1 : 1;
+      return (Number(a.attendance_pct) || 0) - (Number(b.attendance_pct) || 0);
+    });
+  }, [deptAttendance]);
+
+  // Count ties below 50% so tied low bars use neutral gray instead of all red
+  const below50TieMap = useMemo(() => {
+    const counts = {};
+    sortedDeptAttendance.forEach((d) => {
+      const expected = Number(d.expected_days) || 0;
+      const pct = Number(d.attendance_pct) || 0;
+      if (expected > 0 && pct < 50) {
+        counts[pct] = (counts[pct] || 0) + 1;
+      }
+    });
+    return counts;
+  }, [sortedDeptAttendance]);
+
+  // Overtime totals per type for legend & summary bar
+  const overtimeTotals = useMemo(() => {
+    return overtimeTrend.reduce(
+      (acc, t) => ({
+        regular: acc.regular + (Number(t.regular_hours) || 0),
+        weekend: acc.weekend + (Number(t.weekend_hours) || 0),
+        holiday: acc.holiday + (Number(t.holiday_hours) || 0),
+        total: acc.total + (Number(t.total_hours) || 0),
+      }),
+      { regular: 0, weekend: 0, holiday: 0, total: 0 }
+    );
+  }, [overtimeTrend]);
+
+  const activeOtTypes = useMemo(() => {
+    const types = [];
+    if (overtimeTotals.regular > 0) {
+      types.push({ key: 'regular', label: 'Regular', hours: overtimeTotals.regular, cls: 'ot-seg-regular' });
+    }
+    if (overtimeTotals.weekend > 0) {
+      types.push({ key: 'weekend', label: 'Weekend', hours: overtimeTotals.weekend, cls: 'ot-seg-weekend' });
+    }
+    if (overtimeTotals.holiday > 0) {
+      types.push({ key: 'holiday', label: 'Holiday', hours: overtimeTotals.holiday, cls: 'ot-seg-holiday' });
+    }
+    return types;
+  }, [overtimeTotals]);
+
+  const otSingleMonthLabel = useMemo(() => {
+    if (overtimeTrend.length === 1) return overtimeTrend[0].month;
+    return null;
+  }, [overtimeTrend]);
+
+  // Top 5 departments by approved overtime hours from already-loaded data (if present)
+  const otByDepartment = useMemo(() => {
+    const candidates =
+      summary?.overtime_by_department ||
+      summary?.by_department ||
+      (comparison.length ? comparison : null) ||
+      (deptAttendance.length ? deptAttendance : workingHours);
+
+    if (!Array.isArray(candidates)) return [];
+    return candidates
+      .map((item) => ({
+        name: item.department_name || item.name,
+        hours: Number(
+          item.overtime_hours ??
+          item.approved_overtime_hours ??
+          item.total_overtime_hours ??
+          item.ot_hours
+        ),
+      }))
+      .filter((item) => item.name && !Number.isNaN(item.hours) && item.hours > 0)
+      .sort((a, b) => b.hours - a.hours)
+      .slice(0, 5);
+  }, [summary, comparison, deptAttendance, workingHours]);
+
+  // Working hours: sorted highest first, single month label for header
+  const sortedWorkingHours = useMemo(() => {
+    return [...workingHours].sort((a, b) => (Number(b.avg_hours) || 0) - (Number(a.avg_hours) || 0));
+  }, [workingHours]);
+
+  const maxWorkingHours = useMemo(() => {
+    if (!sortedWorkingHours.length) return 0;
+    return Math.max(...sortedWorkingHours.map((h) => Number(h.avg_hours) || 0), 0);
+  }, [sortedWorkingHours]);
+
+  const hasOverShiftHours = useMemo(() => {
+    return sortedWorkingHours.some((h) => (Number(h.avg_hours) || 0) > STANDARD_SHIFT_HOURS);
+  }, [sortedWorkingHours]);
+
+  const hoursMonthLabel = useMemo(() => {
+    const months = [...new Set(workingHours.map((h) => h.month).filter(Boolean))];
+    if (months.length === 1) return months[0];
+    if (months.length > 1) return `${months[0]} – ${months[months.length - 1]}`;
+    return startMonth === endMonth ? startMonth : `${startMonth} – ${endMonth}`;
+  }, [workingHours, startMonth, endMonth]);
+
+  const sharedRowMonthLabel = useMemo(() => {
+    if (hoursMonthLabel) return hoursMonthLabel;
+    if (otSingleMonthLabel) return otSingleMonthLabel;
+    return startMonth === endMonth ? startMonth : `${startMonth} – ${endMonth}`;
+  }, [hoursMonthLabel, otSingleMonthLabel, startMonth, endMonth]);
+
+  useEffect(() => {
+    if (hoursListRef.current) {
+      hoursListRef.current.scrollTop = 0;
+    }
+  }, [sortedWorkingHours, loading]);
+
+  // Punctuality: sorted lists, integer percentages, tie detection
+  const sortedTop10 = useMemo(() => {
+    const list = [...(punctuality.top10 || [])].sort((a, b) => {
+      const pctDiff = Math.round(Number(b.punctuality_pct) || 0) - Math.round(Number(a.punctuality_pct) || 0);
+      if (pctDiff !== 0) return pctDiff;
+      const aDays = Number(a.present_days ?? a.days_present ?? 0);
+      const bDays = Number(b.present_days ?? b.days_present ?? 0);
+      return bDays - aDays;
+    });
+    return list.slice(0, 10);
+  }, [punctuality.top10]);
+
+  const sortedBottom10 = useMemo(() => {
+    const list = [...(punctuality.bottom10 || [])]
+      .filter((emp) => Math.round(Number(emp.punctuality_pct) || 0) < 100)
+      .sort((a, b) => {
+        const pctDiff = Math.round(Number(a.punctuality_pct) || 0) - Math.round(Number(b.punctuality_pct) || 0);
+        if (pctDiff !== 0) return pctDiff;
+        const aDays = Number(a.present_days ?? a.days_present ?? 0);
+        const bDays = Number(b.present_days ?? b.days_present ?? 0);
+        return bDays - aDays;
+      });
+    return list.slice(0, 10);
+  }, [punctuality.bottom10]);
+
+  const analyzeRankingTies = (list) => {
+    if (!list.length) return { hasTies: false, tieNote: null, tiedScores: new Set() };
+    const counts = {};
+    list.forEach((emp) => {
+      const pct = Math.round(Number(emp.punctuality_pct) || 0);
+      counts[pct] = (counts[pct] || 0) + 1;
+    });
+    const tiedEntries = Object.entries(counts)
+      .filter(([, count]) => count > 1)
+      .sort((a, b) => Number(b[1]) - Number(a[1]));
+    const tiedScores = new Set(tiedEntries.map(([pct]) => Number(pct)));
+    const hasTies = tiedEntries.length > 0;
+    const tieNote = hasTies
+      ? `${tiedEntries[0][1]} employees tied at ${tiedEntries[0][0]}%`
+      : null;
+    return { hasTies, tieNote, tiedScores };
+  };
+
+  const topTieInfo = useMemo(() => analyzeRankingTies(sortedTop10), [sortedTop10]);
+  const bottomTieInfo = useMemo(() => analyzeRankingTies(sortedBottom10), [sortedBottom10]);
+
+  const checkScrollAtEnd = useCallback((el) => {
+    if (!el) return true;
+    return el.scrollHeight <= el.clientHeight + 2 || el.scrollTop + el.clientHeight >= el.scrollHeight - 2;
+  }, []);
+
+  useEffect(() => {
+    if (topListRef.current) {
+      topListRef.current.scrollTop = 0;
+      setTopAtEnd(checkScrollAtEnd(topListRef.current));
+    }
+    if (bottomListRef.current) {
+      bottomListRef.current.scrollTop = 0;
+      setBottomAtEnd(checkScrollAtEnd(bottomListRef.current));
+    }
+  }, [sortedTop10, sortedBottom10, loading, checkScrollAtEnd]);
+
+  const excludedPunctualityCount = useMemo(() => {
+    const raw =
+      punctuality?.excluded_count ??
+      punctuality?.excluded ??
+      punctuality?.excluded_employees ??
+      summary?.excluded_count;
+    return raw != null && !Number.isNaN(Number(raw)) ? Number(raw) : null;
+  }, [punctuality, summary]);
+
   return (
-    <div className="layout">
+    <div className="app-container">
       <Sidebar />
-      <main className="main-content">
+      <main className="main-content analytics-main">
         <div className="analytics-container">
           {/* Header */}
           <div className="analytics-header">
@@ -300,13 +503,54 @@ const Analytics = () => {
             </form>
           )}
 
+          {/* Error State */}
+          {error && !isEmployee && (
+            <div className="analytics-error-banner" role="alert">
+              <div className="analytics-error-content">
+                <AlertCircle size={18} />
+                <span>{error}</span>
+              </div>
+              <button
+                type="button"
+                className="analytics-retry-btn"
+                onClick={fetchAnalyticsData}
+              >
+                Retry
+              </button>
+            </div>
+          )}
+
           {/* Low Data Notice */}
-          {summary?.low_data && !isEmployee && (
+          {summary?.low_data && !isEmployee && !loading && (
             <div className="low-data-banner">
               <Info size={18} className="text-amber-600" />
               <span>
                 <strong>Low Data Notice:</strong> The selected period or department contains fewer than 5 attendance records. Projections and rankings may have limited statistical weight.
               </span>
+            </div>
+          )}
+
+          {/* Loading Skeleton */}
+          {loading && !isEmployee && !summary && (
+            <div className="analytics-loading-skeleton" aria-busy="true" aria-label="Loading analytics">
+              <div className="analytics-kpi-grid">
+                {[1, 2, 3, 4].map((n) => (
+                  <div key={n} className="kpi-card skeleton-card">
+                    <div className="skeleton-line skeleton-sm" />
+                    <div className="skeleton-line skeleton-lg" />
+                  </div>
+                ))}
+              </div>
+              <div className="analytics-dual-grid">
+                {[1, 2].map((n) => (
+                  <div key={n} className="analytics-card skeleton-panel">
+                    <div className="skeleton-line skeleton-md" />
+                    <div className="skeleton-line skeleton-bar" />
+                    <div className="skeleton-line skeleton-bar" />
+                    <div className="skeleton-line skeleton-bar" />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
 
@@ -430,317 +674,625 @@ const Analytics = () => {
             </div>
           )}
 
-          {/* Core Analytics Grid */}
+          {/* Core Analytics Grid (First Row: paired 360px height) */}
           {!isEmployee && (
-            <div className="analytics-dual-grid">
+            <div className="analytics-dual-grid analytics-row-paired">
               {/* Chart 1: Department Attendance % Bar Chart */}
               <div className="analytics-card">
                 <div className="card-header">
-                  <div>
+                  <div className="card-header-text">
                     <h3 className="card-title">Department Attendance Rate (%)</h3>
-                    <p className="card-desc">Present days vs scheduled working days (excludes weekends, holidays, leaves).</p>
+                    <p
+                      className="card-desc"
+                      title="Present days vs scheduled working days (excludes weekends, holidays, leaves)."
+                    >
+                      Present days vs scheduled working days (excludes weekends, holidays, leaves).
+                    </p>
                   </div>
                 </div>
 
-                <div className="dept-bars-list">
-                  {deptAttendance.length === 0 ? (
-                    <div className="chart-empty-state">No department attendance records found.</div>
-                  ) : (
-                    deptAttendance.map((d) => (
-                      <div key={d.department_id} className="dept-bar-row">
-                        <div className="dept-bar-label-line">
-                          <span className="dept-name">{d.department_name}</span>
-                          <span className="dept-stat font-numeric">
-                            <strong>{d.attendance_pct}%</strong> ({d.present_days}/{d.expected_days}d)
-                          </span>
-                        </div>
-                        <div className="dept-bar-track">
-                          <div
-                            className={`dept-bar-fill ${d.attendance_pct >= 90 ? 'bg-emerald-500' : d.attendance_pct >= 75 ? 'bg-blue-500' : 'bg-amber-500'}`}
-                            style={{ width: `${Math.min(100, d.attendance_pct)}%` }}
-                          />
-                        </div>
-                      </div>
-                    ))
-                  )}
+                <div className="card-scroll-wrap">
+                  <div className="dept-bars-list card-scroll-body">
+                    {sortedDeptAttendance.length === 0 ? (
+                      <div className="chart-empty-state">No department attendance records found.</div>
+                    ) : (
+                      sortedDeptAttendance.map((d) => {
+                        const expected = Number(d.expected_days) || 0;
+                        const present = Number(d.present_days) || 0;
+                        const pct = Number(d.attendance_pct) || 0;
+                        const hasData = expected > 0;
+                        const isLowTie = hasData && pct < 50 && (below50TieMap[pct] || 0) > 1;
+                        const status = !hasData
+                          ? 'nodata'
+                          : pct < 50
+                            ? 'low'
+                            : pct <= 80
+                              ? 'fair'
+                              : 'good';
+                        const barStatus = isLowTie ? 'low-tie' : status;
+                        const statusLabel = !hasData
+                          ? 'No data'
+                          : pct < 50
+                            ? 'Low'
+                            : pct <= 80
+                              ? 'Fair'
+                              : 'Good';
+
+                        return (
+                          <div key={d.department_id} className="dept-bar-row">
+                            <div className="dept-bar-label-line">
+                              <span className="dept-name" title={d.department_name}>
+                                {d.department_name}
+                              </span>
+                              <span className="dept-stat font-numeric">
+                                {hasData ? (
+                                  <>
+                                    <strong className={`dept-pct-bold ${status === 'low' ? 'status-low-text' : ''}`}>
+                                      {pct}%
+                                    </strong>{' '}
+                                    <span className="dept-days-muted">({present}/{expected}d)</span>
+                                  </>
+                                ) : (
+                                  <span className="dept-no-data">No data</span>
+                                )}
+                              </span>
+                            </div>
+                            {hasData && (
+                              <div
+                                className="dept-bar-track"
+                                role="progressbar"
+                                aria-valuenow={pct}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-label={`${d.department_name}: ${pct}% (${statusLabel})`}
+                              >
+                                {pct > 0 && (
+                                  <div
+                                    className={`dept-bar-fill status-${barStatus}`}
+                                    style={{ width: `${Math.min(100, pct)}%` }}
+                                  />
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
               </div>
 
-              {/* Chart 2: Monthly Absenteeism Velocity with LAG */}
+              {/* Chart 2: Monthly Absenteeism Trend */}
               <div className="analytics-card">
                 <div className="card-header">
-                  <div>
+                  <div className="card-header-text">
                     <h3 className="card-title">Monthly Absenteeism Trend</h3>
-                    <p className="card-desc">Absent day volume with month-over-month rate of change using LAG().</p>
+                    <p
+                      className="card-desc"
+                      title="Monthly absent day volume and month-over-month change."
+                    >
+                      Monthly absent day volume and month-over-month change.
+                    </p>
                   </div>
                 </div>
 
-                <div className="trend-table-wrapper">
-                  {absenteeismTrend.length === 0 ? (
-                    <div className="chart-empty-state">No absenteeism recorded for this duration.</div>
-                  ) : (
-                    <table className="mini-trend-table">
-                      <thead>
-                        <tr>
-                          <th>Month</th>
-                          <th>Absences</th>
-                          <th>Prev Month</th>
-                          <th>MoM Change</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {absenteeismTrend.map((row, idx) => (
-                          <tr key={idx}>
-                            <td className="font-semibold text-slate-800">{row.month}</td>
-                            <td className="font-numeric font-bold">{row.absent_days}</td>
-                            <td className="font-numeric text-slate-500">{row.prev_month_absent_days}</td>
-                            <td>
-                              {row.change_from_prev > 0 ? (
-                                <span className="trend-badge trend-up">
-                                  <ArrowUpRight size={13} />
-                                  <span>+{row.change_from_prev} ({row.pct_change}%)</span>
-                                </span>
-                              ) : row.change_from_prev < 0 ? (
-                                <span className="trend-badge trend-down">
-                                  <ArrowDownRight size={13} />
-                                  <span>{row.change_from_prev} ({row.pct_change}%)</span>
-                                </span>
-                              ) : (
-                                <span className="trend-badge trend-neutral">0 (0.0%)</span>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
+                {absenteeismTrend.length < 2 ? (
+                  <div className="absent-empty-compact">
+                    <div className="chart-empty-state">
+                      Need 2+ months of data to show a month-over-month trend.
+                    </div>
+                    <div className="absent-current-summary">
+                      <div className="absent-current-label">
+                        {absenteeismTrend.length === 1 ? absenteeismTrend[0].month : endMonth} absences
+                      </div>
+                      <div className="absent-current-value font-numeric">
+                        {absenteeismTrend.length === 1
+                          ? absenteeismTrend[0].absent_days
+                          : (summary?.total_absences ?? 0)}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="card-scroll-wrap">
+                    <div className="absent-trend-content card-scroll-body">
+                      {/* Compact Bar Chart */}
+                      <div className="absent-mini-chart" role="img" aria-label="Monthly absenteeism bar chart">
+                        {absenteeismTrend.map((row, idx) => {
+                          const val = Number(row.absent_days) || 0;
+                          const heightPct = maxAbsentDays > 0 ? Math.round((val / maxAbsentDays) * 100) : 0;
+                          return (
+                            <div key={idx} className="absent-bar-col">
+                              <span className="absent-bar-val font-numeric">{val}</span>
+                              <div className="absent-bar-well">
+                                <div
+                                  className="absent-bar-pillar"
+                                  style={{ height: `${val > 0 ? Math.max(8, heightPct) : 0}%` }}
+                                  title={`${row.month}: ${val} absent days`}
+                                />
+                              </div>
+                              <span className="absent-bar-month">{row.month}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Compact Table */}
+                      <div className="trend-table-wrapper">
+                        <table className="mini-trend-table">
+                          <thead>
+                            <tr>
+                              <th>Month</th>
+                              <th>Absences</th>
+                              <th>Prev</th>
+                              <th>MoM Change</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {absenteeismTrend.map((row, idx) => {
+                              const prev = Number(row.prev_month_absent_days) || 0;
+                              const curr = Number(row.absent_days) || 0;
+                              const diff = Number(row.change_from_prev) || 0;
+
+                              return (
+                                <tr key={idx}>
+                                  <td className="font-semibold text-slate-800">{row.month}</td>
+                                  <td className="font-numeric font-bold">{curr}</td>
+                                  <td className="font-numeric text-slate-500">{prev}</td>
+                                  <td>
+                                    {prev === 0 && curr > 0 ? (
+                                      <span className="trend-badge trend-new">New</span>
+                                    ) : diff > 0 ? (
+                                      <span className="trend-badge trend-up">
+                                        <ArrowUpRight size={13} aria-hidden="true" />
+                                        <span>+{diff} ({row.pct_change}%)</span>
+                                      </span>
+                                    ) : diff < 0 ? (
+                                      <span className="trend-badge trend-down">
+                                        <ArrowDownRight size={13} aria-hidden="true" />
+                                        <span>{diff} ({row.pct_change}%)</span>
+                                      </span>
+                                    ) : (
+                                      <span className="trend-badge trend-neutral">0 (0.0%)</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
 
-          {/* Overtime & Working Hours Grid */}
+          {/* Working Hours (60%) & Overtime (40%) Row */}
           {!isEmployee && (
-            <div className="analytics-dual-grid">
-              {/* Overtime Trend Stacked Bars */}
-              <div className="analytics-card">
-                <div className="card-header">
-                  <div>
-                    <h3 className="card-title">Approved Overtime Hours</h3>
-                    <p className="card-desc">Monthly overtime volume classified by regular, weekend, and holiday.</p>
+            <div className="analytics-row-group">
+              {sharedRowMonthLabel && (
+                <div className="analytics-row-subheader">
+                  <span className="card-header-meta font-numeric">{sharedRowMonthLabel}</span>
+                </div>
+              )}
+
+              <div className="analytics-split-grid analytics-row-stretch">
+                {/* Left (60%): Average Working Hours Per Department */}
+                <div className="analytics-card analytics-card-stretch">
+                  <div className="card-header card-header-stacked">
+                    <div className="card-title-row">
+                      <h3 className="card-title">Average Working Hours</h3>
+                      {hasOverShiftHours && (
+                        <div className="hours-legend" aria-label="Over shift indicator">
+                          <span className="legend-swatch hours-bar-overshift" />
+                          <span>Over shift (&gt;{STANDARD_SHIFT_HOURS}h)</span>
+                        </div>
+                      )}
+                    </div>
+                    <p className="card-desc" title="Per department, highest first">
+                      Per department, highest first
+                    </p>
                   </div>
-                  <div className="chart-legend">
-                    <span className="legend-item"><span className="legend-dot bg-blue-500" /> Regular</span>
-                    <span className="legend-item"><span className="legend-dot bg-emerald-500" /> Weekend</span>
-                    <span className="legend-item"><span className="legend-dot bg-purple-500" /> Holiday</span>
-                  </div>
+
+                  {sortedWorkingHours.length === 0 ? (
+                    <div className="chart-empty-state">No working hours data available.</div>
+                  ) : (
+                    <div className="card-scroll-wrap">
+                      <div ref={hoursListRef} className="hours-list card-scroll-body">
+                        {sortedWorkingHours.map((h, idx) => {
+                          const avgH = Number(h.avg_hours) || 0;
+                          const relPct = maxWorkingHours > 0 ? Math.min(100, (avgH / maxWorkingHours) * 100) : 0;
+                          const isOverShift = avgH > STANDARD_SHIFT_HOURS;
+                          return (
+                            <div key={idx} className="hours-row">
+                              <div className="hours-row-top">
+                                <span className="hours-dept-name" title={h.department_name}>
+                                  {h.department_name}
+                                </span>
+                                <div className="hours-val-wrap">
+                                  <span className={`hours-val font-numeric ${isOverShift ? 'hours-val-overshift' : ''}`}>
+                                    {avgH.toFixed(2)} hrs/day
+                                  </span>
+                                  <span className="hours-count font-numeric">{h.days_count} days</span>
+                                </div>
+                              </div>
+                              <div
+                                className="hours-bar-track"
+                                role="progressbar"
+                                aria-valuenow={avgH}
+                                aria-valuemin={0}
+                                aria-valuemax={maxWorkingHours || 1}
+                                aria-label={`${h.department_name}: ${avgH.toFixed(2)} hours per day${isOverShift ? ' (over shift)' : ''}`}
+                              >
+                                {avgH > 0 && (
+                                  <div
+                                    className={`hours-bar-fill ${isOverShift ? 'hours-bar-overshift' : 'hours-bar-neutral'}`}
+                                    style={{ width: `${relPct}%` }}
+                                  />
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                <div className="overtime-bars-container">
+                {/* Right (40%): Approved Overtime Hours */}
+                <div className="analytics-card analytics-card-stretch">
+                  <div className="card-header card-header-stacked">
+                    <div className="card-title-row">
+                      <h3 className="card-title">Approved Overtime Hours</h3>
+                    </div>
+                    <p className="card-desc" title="Approved hours by type">
+                      Approved hours by type
+                    </p>
+                  </div>
+
                   {overtimeTrend.length === 0 ? (
                     <div className="chart-empty-state">No approved overtime hours recorded in this range.</div>
                   ) : (
-                    overtimeTrend.map((t, idx) => (
-                      <div key={idx} className="ot-month-item">
-                        <div className="ot-month-label">{t.month}</div>
-                        <div className="ot-stacked-bar">
-                          {t.total_hours > 0 ? (
-                            <>
-                              <div
-                                className="ot-segment bg-blue-500"
-                                style={{ width: `${(t.regular_hours / maxOtHours) * 100}%` }}
-                                title={`Regular: ${t.regular_hours}h`}
-                              />
-                              <div
-                                className="ot-segment bg-emerald-500"
-                                style={{ width: `${(t.weekend_hours / maxOtHours) * 100}%` }}
-                                title={`Weekend: ${t.weekend_hours}h`}
-                              />
-                              <div
-                                className="ot-segment bg-purple-500"
-                                style={{ width: `${(t.holiday_hours / maxOtHours) * 100}%` }}
-                                title={`Holiday: ${t.holiday_hours}h`}
-                              />
-                            </>
-                          ) : (
-                            <div className="ot-zero-bar" />
-                          )}
-                        </div>
-                        <div className="ot-total font-numeric">{t.total_hours}h</div>
+                    <div className="ot-card-body">
+                      <div className="ot-hero-total font-numeric">
+                        {formatHoursVal(overtimeTotals.total)}h
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
 
-              {/* Average Working Hours Per Department */}
-              <div className="analytics-card">
-                <div className="card-header">
-                  <div>
-                    <h3 className="card-title">Average Working Hours</h3>
-                    <p className="card-desc">Recorded productive hours per department and month.</p>
-                  </div>
-                </div>
-
-                <div className="hours-list">
-                  {workingHours.length === 0 ? (
-                    <div className="chart-empty-state">No working hours data available.</div>
-                  ) : (
-                    workingHours.map((h, idx) => (
-                      <div key={idx} className="hours-row">
-                        <div className="hours-dept-info">
-                          <span className="hours-dept-name">{h.department_name}</span>
-                          <span className="hours-month">{h.month}</span>
-                        </div>
-                        <div className="hours-val-wrap">
-                          <span className="hours-val font-numeric">{h.avg_hours} hrs/day</span>
-                          <span className="hours-count font-numeric">({h.days_count} entries)</span>
-                        </div>
+                      {/* Single 12px rounded stacked bar */}
+                      <div
+                        className="ot-summary-bar"
+                        role="img"
+                        aria-label={activeOtTypes.map((t) => `${t.label}: ${formatHoursVal(t.hours)}h`).join(', ') || '0h'}
+                      >
+                        {overtimeTotals.total > 0 ? (
+                          activeOtTypes.map((t) => (
+                            <div
+                              key={t.key}
+                              className={`ot-segment ${t.cls}`}
+                              style={{ width: `${(t.hours / overtimeTotals.total) * 100}%` }}
+                              title={`${t.label}: ${formatHoursVal(t.hours)}h`}
+                            />
+                          ))
+                        ) : (
+                          <div className="ot-zero-bar" />
+                        )}
                       </div>
-                    ))
+
+                      {/* Caption per active type below bar */}
+                      {activeOtTypes.length > 0 && (
+                        <div className="ot-type-captions">
+                          {activeOtTypes.map((t) => (
+                            <span key={t.key} className="ot-type-caption">
+                              <span className={`legend-swatch ${t.cls}`} />
+                              <span>{t.label}:</span>
+                              <strong className="font-numeric">{formatHoursVal(t.hours)}h</strong>
+                            </span>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Month rows only when more than 1 month */}
+                      {overtimeTrend.length > 1 && (
+                        <div className="overtime-bars-container">
+                          {overtimeTrend.map((t, idx) => (
+                            <div key={idx} className="ot-month-item">
+                              <div className="ot-month-label font-numeric">{t.month}</div>
+                              <div
+                                className="ot-stacked-bar"
+                                role="img"
+                                aria-label={`${t.month}: Regular ${formatHoursVal(t.regular_hours)}h, Weekend ${formatHoursVal(t.weekend_hours)}h, Holiday ${formatHoursVal(t.holiday_hours)}h, Total ${formatHoursVal(t.total_hours)}h`}
+                              >
+                                {t.total_hours > 0 ? (
+                                  <>
+                                    {Number(t.regular_hours) > 0 && (
+                                      <div
+                                        className="ot-segment ot-seg-regular"
+                                        style={{ width: `${(t.regular_hours / maxOtHours) * 100}%` }}
+                                        title={`Regular: ${formatHoursVal(t.regular_hours)}h`}
+                                      />
+                                    )}
+                                    {Number(t.weekend_hours) > 0 && (
+                                      <div
+                                        className="ot-segment ot-seg-weekend"
+                                        style={{ width: `${(t.weekend_hours / maxOtHours) * 100}%` }}
+                                        title={`Weekend: ${formatHoursVal(t.weekend_hours)}h`}
+                                      />
+                                    )}
+                                    {Number(t.holiday_hours) > 0 && (
+                                      <div
+                                        className="ot-segment ot-seg-holiday"
+                                        style={{ width: `${(t.holiday_hours / maxOtHours) * 100}%` }}
+                                        title={`Holiday: ${formatHoursVal(t.holiday_hours)}h`}
+                                      />
+                                    )}
+                                  </>
+                                ) : (
+                                  <div className="ot-zero-bar" />
+                                )}
+                              </div>
+                              <div className="ot-total font-numeric">{formatHoursVal(t.total_hours)}h</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Top departments mini-list with thin bars */}
+                      {otByDepartment.length > 0 && (
+                        <div className="ot-dept-mini">
+                          <div className="ot-dept-mini-title">Top departments</div>
+                          <div className="ot-dept-mini-list">
+                            {otByDepartment.map((d) => {
+                              const maxDeptOt = otByDepartment[0].hours || 1;
+                              const barPct = Math.min(100, (d.hours / maxDeptOt) * 100);
+                              return (
+                                <div key={d.name} className="ot-dept-mini-item">
+                                  <div className="ot-dept-mini-row">
+                                    <span className="ot-dept-mini-name" title={d.name}>{d.name}</span>
+                                    <span className="ot-dept-mini-val font-numeric">{formatHoursVal(d.hours)}h</span>
+                                  </div>
+                                  <div className="ot-dept-bar-track">
+                                    <div className="ot-dept-bar-fill" style={{ width: `${barPct}%` }} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* Tables: Punctuality Ranking & Frequent Lates */}
+          {/* Full-Width Stacked Cards: Punctuality Ranking & Frequent Late Arrivals */}
           {!isEmployee && (
-            <div className="analytics-dual-grid">
-              {/* Punctuality Rankings (Top & Bottom 10) */}
-              <div className="analytics-card">
-                <div className="card-header">
-                  <div>
-                    <h3 className="card-title">Punctuality Ranking (Top & Bottom 10)</h3>
-                    <p className="card-desc">On-time days / days present. Ignores staff with &lt; 5 days present.</p>
+            <div className="analytics-full-stack">
+              {/* Punctuality Rankings (2-Column Inside Full-Width Card) */}
+              <div className="analytics-card analytics-card-full">
+                <div className="card-header card-header-stacked">
+                  <div className="card-title-row">
+                    <h3 className="card-title">Punctuality Ranking</h3>
                   </div>
+                  <p
+                    className="card-desc"
+                    title={
+                      topTieInfo.tieNote || bottomTieInfo.tieNote
+                        ? `On-time days / days present. ${topTieInfo.tieNote || bottomTieInfo.tieNote}.`
+                        : 'On-time days / days present. Ignores staff with < 5 days present.'
+                    }
+                  >
+                    {topTieInfo.tieNote || bottomTieInfo.tieNote
+                      ? `On-time days / days present. ${topTieInfo.tieNote || bottomTieInfo.tieNote}.`
+                      : 'On-time days / days present. Ignores staff with < 5 days present.'}
+                  </p>
                 </div>
 
                 <div className="ranking-lists">
+                  {/* Top 10 Column */}
                   <div className="ranking-col">
-                    <h4 className="ranking-subtitle text-emerald-700">Top 10 Most Punctual</h4>
-                    {punctuality.top10.length === 0 ? (
+                    <div className="ranking-col-head">
+                      <h4 className="ranking-subtitle">Top 10 most punctual</h4>
+                    </div>
+                    {sortedTop10.length === 0 ? (
                       <p className="no-rankings-text">No employees qualified (requires &ge; 5 present days).</p>
+                    ) : sortedTop10.length > 4 ? (
+                      <div
+                        ref={topListRef}
+                        className="ranking-rows ranking-scroll-box"
+                        tabIndex={0}
+                        aria-label="Top 10 most punctual employees, scrollable"
+                      >
+                        {sortedTop10.map((emp) => {
+                          const pct = Math.round(Number(emp.punctuality_pct ?? 0));
+                          const pctColorClass = pct >= 90 ? 'rank-pct-green' : pct >= 70 ? 'rank-pct-amber' : 'rank-pct-red';
+                          return (
+                            <div key={emp.employee_id} className="ranking-item">
+                              <div className="rank-emp-info">
+                                <button
+                                  type="button"
+                                  className="rank-name-link"
+                                  onClick={() => handleOpenCalendar(emp.employee_id)}
+                                  title="View employee attendance calendar"
+                                >
+                                  {emp.employee_name}
+                                </button>
+                                <span className="rank-dept">{emp.department_name}</span>
+                              </div>
+                              <div className={`rank-rate ${pctColorClass} font-numeric`}>
+                                {pct}%
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     ) : (
-                      punctuality.top10.map((emp) => (
-                        <div key={emp.employee_id} className="ranking-item">
-                          <div className="rank-badge gold">#{emp.rank_pos}</div>
-                          <div className="rank-emp-info">
-                            <button
-                              type="button"
-                              className="rank-name-link"
-                              onClick={() => handleOpenCalendar(emp.employee_id)}
-                              title="View employee calendar"
-                            >
-                              {emp.employee_name}
-                            </button>
-                            <span className="rank-dept">{emp.department_name}</span>
-                          </div>
-                          <div className="rank-rate font-numeric text-emerald-600">
-                            {emp.punctuality_pct}%
-                          </div>
-                        </div>
-                      ))
+                      <div className="ranking-rows">
+                        {sortedTop10.map((emp) => {
+                          const pct = Math.round(Number(emp.punctuality_pct ?? 0));
+                          const pctColorClass = pct >= 90 ? 'rank-pct-green' : pct >= 70 ? 'rank-pct-amber' : 'rank-pct-red';
+                          return (
+                            <div key={emp.employee_id} className="ranking-item">
+                              <div className="rank-emp-info">
+                                <button
+                                  type="button"
+                                  className="rank-name-link"
+                                  onClick={() => handleOpenCalendar(emp.employee_id)}
+                                  title="View employee attendance calendar"
+                                >
+                                  {emp.employee_name}
+                                </button>
+                                <span className="rank-dept">{emp.department_name}</span>
+                              </div>
+                              <div className={`rank-rate ${pctColorClass} font-numeric`}>
+                                {pct}%
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
 
+                  {/* Bottom 10 Column */}
                   <div className="ranking-col">
-                    <h4 className="ranking-subtitle text-amber-700">Bottom 10 Needs Attention</h4>
-                    {punctuality.bottom10.length === 0 ? (
-                      <p className="no-rankings-text">No employees qualified.</p>
+                    <div className="ranking-col-head">
+                      <h4 className="ranking-subtitle">Bottom 10 needs attention</h4>
+                    </div>
+                    {sortedBottom10.length === 0 ? (
+                      <p className="no-rankings-text">Everyone is at 100%</p>
+                    ) : sortedBottom10.length >= 4 ? (
+                      <div
+                        ref={bottomListRef}
+                        className="ranking-rows ranking-scroll-box"
+                        tabIndex={0}
+                        aria-label="Bottom 10 needs attention employees, scrollable"
+                      >
+                        {sortedBottom10.map((emp) => {
+                          const pct = Math.round(Number(emp.punctuality_pct ?? 0));
+                          const pctColorClass = pct >= 90 ? 'rank-pct-green' : pct >= 70 ? 'rank-pct-amber' : 'rank-pct-red';
+                          return (
+                            <div key={emp.employee_id} className="ranking-item">
+                              <div className="rank-emp-info">
+                                <button
+                                  type="button"
+                                  className="rank-name-link"
+                                  onClick={() => handleOpenCalendar(emp.employee_id)}
+                                  title="View employee attendance calendar"
+                                >
+                                  {emp.employee_name}
+                                </button>
+                                <span className="rank-dept">{emp.department_name}</span>
+                              </div>
+                              <div className={`rank-rate ${pctColorClass} font-numeric`}>
+                                {pct}%
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
                     ) : (
-                      punctuality.bottom10.map((emp) => (
-                        <div key={emp.employee_id} className="ranking-item">
-                          <div className="rank-badge warn">#{emp.rank_pos}</div>
-                          <div className="rank-emp-info">
-                            <button
-                              type="button"
-                              className="rank-name-link"
-                              onClick={() => handleOpenCalendar(emp.employee_id)}
-                              title="View employee calendar"
-                            >
-                              {emp.employee_name}
-                            </button>
-                            <span className="rank-dept">{emp.department_name}</span>
-                          </div>
-                          <div className="rank-rate font-numeric text-amber-600">
-                            {emp.punctuality_pct}%
-                          </div>
+                      <>
+                        <div className="ranking-rows">
+                          {sortedBottom10.map((emp) => {
+                            const pct = Math.round(Number(emp.punctuality_pct ?? 0));
+                            const pctColorClass = pct >= 90 ? 'rank-pct-green' : pct >= 70 ? 'rank-pct-amber' : 'rank-pct-red';
+                            return (
+                              <div key={emp.employee_id} className="ranking-item">
+                                <div className="rank-emp-info">
+                                  <button
+                                    type="button"
+                                    className="rank-name-link"
+                                    onClick={() => handleOpenCalendar(emp.employee_id)}
+                                    title="View employee attendance calendar"
+                                  >
+                                    {emp.employee_name}
+                                  </button>
+                                  <span className="rank-dept">{emp.department_name}</span>
+                                </div>
+                                <div className={`rank-rate ${pctColorClass} font-numeric`}>
+                                  {pct}%
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))
+                        <p className="ranking-short-note font-numeric">
+                          Only {sortedBottom10.length} {sortedBottom10.length === 1 ? 'employee' : 'employees'} below 100%
+                        </p>
+                      </>
                     )}
                   </div>
                 </div>
+
+                {excludedPunctualityCount !== null && (
+                  <div className="ranking-footer-note font-numeric">
+                    {excludedPunctualityCount} {excludedPunctualityCount === 1 ? 'employee' : 'employees'} excluded (fewer than 5 days present)
+                  </div>
+                )}
               </div>
 
-              {/* Frequent Late Arrivals Table */}
-              <div className="analytics-card">
-                <div className="card-header">
-                  <div>
+              {/* Frequent Late Arrivals Table (Full-Width Card) */}
+              <div className="analytics-card analytics-card-full late-arrivals-card">
+                <div className="card-header card-header-stacked">
+                  <div className="card-title-row">
                     <h3 className="card-title">Frequent Late Arrivals</h3>
-                    <p className="card-desc">Employees with highest volume of tardiness and total lost minutes.</p>
                   </div>
+                  <p
+                    className="card-desc"
+                    title="Most late days and time lost"
+                  >
+                    Most late days and time lost
+                  </p>
                 </div>
 
                 <div className="late-table-wrapper">
-                  <table className="comparison-table">
+                  <table className="comparison-table late-table">
+                    <colgroup>
+                      <col className="late-col-emp" />
+                      <col className="late-col-days" />
+                      <col className="late-col-lost" />
+                      <col className="late-col-avg" />
+                    </colgroup>
                     <thead>
                       <tr>
                         <th>Employee</th>
-                        <th>Department</th>
-                        <th>Late Days</th>
-                        <th>Total Lost Time</th>
-                        <th>Avg Late</th>
+                        <th className="late-num-col">Late Days</th>
+                        <th className="late-num-col">Lost Time</th>
+                        <th className="late-num-col">Avg Late</th>
                       </tr>
                     </thead>
                     <tbody>
                       {frequentLates.items.length === 0 ? (
                         <tr>
-                          <td colSpan="5" className="empty-table-cell">No late check-ins recorded for this period.</td>
+                          <td colSpan="4" className="empty-table-cell">No late check-ins recorded for this period.</td>
                         </tr>
                       ) : (
-                        frequentLates.items.map((emp) => (
+                        frequentLates.items.slice(0, 10).map((emp) => (
                           <tr key={emp.employee_id}>
                             <td>
-                              <button
-                                type="button"
-                                className="rank-name-link"
-                                onClick={() => handleOpenCalendar(emp.employee_id)}
-                              >
-                                {emp.employee_name}
-                              </button>
+                              <div className="rank-emp-info">
+                                <button
+                                  type="button"
+                                  className="rank-name-link"
+                                  onClick={() => handleOpenCalendar(emp.employee_id)}
+                                  title="View employee attendance calendar"
+                                >
+                                  {emp.employee_name}
+                                </button>
+                                <span className="rank-dept">{emp.department_name}</span>
+                              </div>
                             </td>
-                            <td className="text-slate-600">{emp.department_name}</td>
-                            <td className="font-numeric font-bold text-amber-700">{emp.late_days}</td>
-                            <td className="font-numeric">{emp.total_late_minutes} mins</td>
-                            <td className="font-numeric text-slate-500">{emp.avg_late_minutes}m</td>
+                            <td className="late-num-col late-regular-num font-numeric">{emp.late_days}</td>
+                            <td className="late-num-col late-lost-bold font-numeric">{formatMinutesToHm(emp.total_late_minutes)}</td>
+                            <td className="late-num-col late-regular-num font-numeric">{formatMinutesToHm(emp.avg_late_minutes)}</td>
                           </tr>
                         ))
                       )}
                     </tbody>
                   </table>
-
-                  {frequentLates.totalPages > 1 && (
-                    <div className="table-pagination">
-                      <button
-                        type="button"
-                        disabled={latesPage <= 1}
-                        onClick={() => setLatesPage((p) => Math.max(1, p - 1))}
-                        className="page-nav-btn"
-                      >
-                        <ChevronLeft size={14} />
-                      </button>
-                      <span className="page-nav-text">Page {latesPage} of {frequentLates.totalPages}</span>
-                      <button
-                        type="button"
-                        disabled={latesPage >= frequentLates.totalPages}
-                        onClick={() => setLatesPage((p) => Math.min(frequentLates.totalPages, p + 1))}
-                        className="page-nav-btn"
-                      >
-                        <ChevronRight size={14} />
-                      </button>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>
